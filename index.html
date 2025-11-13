@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Waring Bicem - Order Makanan</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Splash Screen -->
+    <div class="splash-screen" id="splash-screen">
+        <div class="splash-logo">🍽️</div>
+        <h1 class="splash-title">Waring Bicem</h1>
+        <p class="splash-subtitle">Order your favourite food!</p>
+        <div class="loading-bar">
+            <div class="loading-progress"></div>
+        </div>
+        <img src="bieem.png" alt="" class="splash-image">
+    </div>
+
+    <!-- Main App Container -->
+    <div class="container">
+        <!-- Home Page -->
+        <div class="page active" id="home-page">
+            <div class="header">
+                <h1 class="header-title">Waring Bicem</h1>
+                <div class="header-icon" id="notification-icon">🔔</div>
+            </div>
+            
+            <p class="page-subtitle">Order your favourite food!</p>
+            
+            <div class="search-container">
+                <input type="text" class="search-input" placeholder="Search" id="search-input">
+                <div class="search-icon">🔍</div>
+            </div>
+            
+            <div class="categories">
+                <button class="category-btn active" data-category="all">All</button>
+                <button class="category-btn" data-category="food">Food</button>
+                <button class="category-btn" data-category="beverage">Beverage</button>
+                <button class="category-btn" data-category="confirmation">Orders</button>
+            </div>
+            
+            <div class="menu-grid" id="menu-grid">
+                <!-- Menu items will be loaded from database -->
+            </div>
+            
+        </div>
+
+        <!-- Orders/Confirmation Page -->
+        <div class="page" id="orders-page">
+            <div class="header">
+                <h1 class="header-title">Waring Bicem</h1>
+                <div class="header-icon" id="notification-icon-orders">🔔</div>
+            </div>
+            
+            <p class="page-subtitle">Order your favourite food!</p>
+            
+            <div class="search-container">
+                <input type="text" class="search-input" placeholder="Search" id="search-orders">
+                <div class="search-icon">🔍</div>
+            </div>
+            
+            <div class="categories">
+                <button class="category-btn" data-category="all">All</button>
+                <button class="category-btn" data-category="food">Food</button>
+                <button class="category-btn" data-category="beverage">Beverage</button>
+                <button class="category-btn active" data-category="confirmation">Orders</button>
+            </div>
+            
+            <div class="order-summary">
+                <h2 class="order-title">Order Summary</h2>
+                <div id="cart-items">
+                    <!-- Cart items will be loaded here -->
+                    <div class="empty-cart">
+                        <div class="empty-cart-icon">🛒</div>
+                        <p>Keranjang masih kosong.</p>
+                    </div>
+                </div>
+                
+                <div class="order-total">
+                    <span>Total:</span>
+                    <span class="total-amount" id="total-amount">Rp 0</span>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label" for="customer-name">Order Name</label>
+                <input type="text" class="form-input" id="customer-name" placeholder="Masukkan nama lengkap Anda">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="notes">Catatan (opsional):</label>
+                <textarea class="form-input" id="notes" rows="3" placeholder="Contoh: Tidak pedas, tambah kecap, pesan antar, dll."></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Total price</label>
+                <div class="total-price-display" id="total-price-display">Rp 0</div>
+            </div>
+            
+            <button class="btn btn-primary" id="confirm-order-btn">Confirmation</button>
+        </div>
+
+        <!-- Success Page -->
+        <div class="page" id="success-page">
+            <div class="success-screen">
+                <div class="success-icon">✅</div>
+                <h2 class="success-title">Success !</h2>
+                <p class="success-message">Your Order was successful.<br>Please come to cashier for payment.</p>
+                <button class="btn btn-secondary" id="go-back-btn">Go Back</button>
+            </div>
+        </div>
+
+        <!-- Bottom Navigation -->
+        <div class="bottom-nav">
+            <a href="#" class="nav-item active" data-page="home-page">
+                <div class="nav-icon">🏠</div>
+                <span style="color: white;">Home</span>
+            </a>
+            <a href="#" class="nav-item" data-page="orders-page">
+                <div class="nav-icon">📋</div>
+                <span style="color: white;">Orders</span>
+                <div class="cart-badge" id="cart-badge">0</div>
+            </a>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
