@@ -680,6 +680,25 @@ body {
     opacity: 0.8;
 }
 
+/* === TAMBAHAN BARU (Tombol Batal Riwayat) === */
+.history-cancel-btn {
+    background-color: #e74c3c; /* Warna merah (batal) */
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: var(--transition);
+    font-weight: 600;
+    margin: 0px 15px 15px 15px; /* Margin (top, sides, bottom, sides) */
+    width: calc(100% - 30px); /* Lebar penuh dikurangi padding samping */
+    font-size: 0.9rem;
+}
+.history-cancel-btn:hover {
+    background-color: #c0392b; /* Warna merah lebih gelap saat hover */
+}
+/* === AKHIR TAMBAHAN === */
+
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }

@@ -108,6 +108,31 @@ class SupabaseClient {
             return { success: false, error: error.message };
         }
     }
+
+    async updateOrderStatusByIds(idList, status) {
+        if (!idList || idList.length === 0) {
+            return { success: true, data: [] };
+        }
+        try {
+            const updates = { status };
+            // Anda bisa tambahkan 'cancelled_at' jika tabel Anda mendukung
+            // if (status === 'cancelled') {
+            //     updates.cancelled_at = new Date().toISOString();
+            // }
+
+            const { data, error } = await supabase
+                .from('sales')
+                .update(updates)
+                .in('id', idList) // <-- Menggunakan .in() untuk update massal
+                .select();
+            
+            if (error) throw error;
+            return { success: true, data };
+        } catch (error) {
+            console.error('Error updating multiple order statuses:', error);
+            return { success: false, error: error.message };
+        }
+    }
 }
 
 // Global instance

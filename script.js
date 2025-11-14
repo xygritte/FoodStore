@@ -438,20 +438,19 @@ function renderOrderHistory(orders, status) {
     // Kelompokkan pesanan berdasarkan sale_date + customer_name (kunci "sesi")
     const groupedOrders = {};
     for (const order of orders) {
-        // Kunci grup adalah waktu penjualan dan nama pelanggan
         const groupKey = `${order.customer_name}_${order.sale_date}`;
         if (!groupedOrders[groupKey]) {
             groupedOrders[groupKey] = {
                 customer: order.customer_name,
                 datetime: order.sale_date,
-                notes: order.notes, // Catatan sudah diambil di sini
-                items: [],
+                notes: order.notes,
+                items: [], // Pastikan 'items' ada di sini
                 total_amount: 0,
-                status: 'mixed' // Status default
+                status: 'mixed'
             };
         }
         
-        groupedOrders[groupKey].items.push(order);
+        groupedOrders[groupKey].items.push(order); // 'items' diisi di sini
         groupedOrders[groupKey].total_amount += order.total;
     }
     
@@ -459,21 +458,20 @@ function renderOrderHistory(orders, status) {
     const sortedGroups = Object.values(groupedOrders).map(group => {
         const statuses = new Set(group.items.map(item => item.status));
         if (statuses.size === 1) {
-            group.status = statuses.values().next().value; // Hanya ada satu status
+            group.status = statuses.values().next().value;
         } else if (statuses.has('pending')) {
-            group.status = 'mixed'; // Jika ada yg pending, statusnya mixed
+            group.status = 'mixed';
         } else if (statuses.has('confirmed')) {
-            group.status = 'confirmed'; // Jika tidak ada yg pending, tapi ada yg confirmed
+            group.status = 'confirmed';
         } else {
-            group.status = 'cancelled'; // Jika semuanya cancelled
+            group.status = 'cancelled';
         }
         return group;
-    }).sort((a, b) => new Date(b.datetime) - new Date(a.datetime)); // Urutkan, terbaru di atas
+    }).sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
 
     // Bersihkan kontainer
     historyListContainer.innerHTML = '';
     
-    // Tambahkan tombol refresh
     const refreshBtn = document.createElement('button');
     refreshBtn.className = 'history-refresh-btn';
     refreshBtn.innerHTML = '🔄 Refresh Status Pesanan';
@@ -515,16 +513,28 @@ function renderOrderHistory(orders, status) {
             hour: '2-digit', minute: '2-digit'
         });
 
-        // --- INI PERUBAHANNYA ---
-        // Buat blok HTML untuk catatan HANYA JIKA ada catatan
         let notesHtml = '';
         if (group.notes && group.notes.trim() !== '') {
-            // Kita gunakan <pre> agar format baris baru dari catatan tetap tampil
             notesHtml = `
                 <div class="history-notes">
                     <strong>Catatan:</strong>
                     <pre class="history-notes-text">${group.notes}</pre>
                 </div>
+            `;
+        }
+
+        // --- INI PERUBAHAN UTAMANYA ---
+        // Siapkan ID item untuk tombol batal
+        const itemIds = group.items.map(item => item.id);
+        
+        // Buat tombol Batal HANYA jika statusnya 'pending' atau 'mixed'
+        let cancelButtonHtml = '';
+        if (group.status === 'pending' || group.status === 'mixed') {
+            // Gunakan JSON.stringify untuk melewatkan array ID ke fungsi onclick
+            cancelButtonHtml = `
+                <button class="history-cancel-btn" onclick='handleCancelOrderGroup(${JSON.stringify(itemIds)}, "${group.customer}")'>
+                    ❌ Batalkan Pesanan
+                </button>
             `;
         }
         // --- AKHIR PERUBAHAN ---
@@ -538,14 +548,51 @@ function renderOrderHistory(orders, status) {
             <div class="history-items-list">
                 ${itemsHtml}
             </div>
-            ${notesHtml} <div class="history-total">
+            ${notesHtml}
+            <div class="history-total">
                 Total: ${formatRupiah(group.total_amount)}
             </div>
-        `;
+            ${cancelButtonHtml} `;
         historyListContainer.appendChild(groupEl);
     }
 }
 // === AKHIR FUNGSI (History) ===
+
+// --- TAMBAHKAN FUNGSI BARU DI BAWAH INI ---
+async function handleCancelOrderGroup(itemIds, customerName) {
+    if (isProcessing) return; // Mencegah klik ganda
+
+    // Konfirmasi dari user
+    const confirmation = confirm(`Anda yakin ingin membatalkan pesanan untuk ${customerName}? (${itemIds.length} item)`);
+    if (!confirmation) {
+        return;
+    }
+
+    isProcessing = true;
+    showNotification("Sedang membatalkan pesanan...");
+
+    try {
+        // Panggil fungsi baru di supabaseClient
+        const result = await supabaseClient.updateOrderStatusByIds(itemIds, 'cancelled');
+
+        if (result.success) {
+            showNotification(`✅ Pesanan untuk ${customerName} berhasil dibatalkan.`);
+            // Muat ulang riwayat untuk menampilkan status "cancelled"
+            loadOrderHistory();
+        } else {
+            throw new Error(result.error);
+        }
+    } catch (error) {
+        console.error('Gagal membatalkan pesanan:', error);
+        showNotification(`❌ Gagal membatalkan pesanan: ${error.message}`);
+    } finally {
+        isProcessing = false;
+    }
+}
+// --- AKHIR FUNGSI BARU ---
+
+
+
 
 
 // === FUNGSI NAVIGASI ===
@@ -708,4 +755,5 @@ document.addEventListener('visibilitychange', function() {
 // Global function for retry
 window.loadProducts = loadProducts;
 window.addToCart = addToCart;
-window.loadOrderHistory = loadOrderHistory; // <-- TAMBAHAN BARU
+window.loadOrderHistory = loadOrderHistory;
+window.handleCancelOrderGroup = handleCancelOrderGroup; // <-- TAMBAHKAN INI
