@@ -228,24 +228,18 @@ function showNotification(message) {
 }
 
 // === FUNGSI API (DATABASE) ===
+// === FUNGSI API (SUPABASE) ===
 async function loadProducts() {
     try {
-        console.log('Memuat produk...');
-        const response = await fetch('api_get_products.php');
+        console.log('Memuat produk dari Supabase...');
+        const result = await supabaseClient.getProducts();
         
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        console.log('Data produk diterima:', data);
-        
-        if (data.success) {
-            products = data.products;
+        if (result.success) {
+            products = result.products;
             renderProducts();
             console.log(`Berhasil memuat ${products.length} produk`);
         } else {
-            throw new Error(data.message || 'Gagal memuat produk');
+            throw new Error(result.error || 'Gagal memuat produk');
         }
     } catch (error) {
         console.error('Error memuat produk:', error);
@@ -268,77 +262,61 @@ async function processCheckout() {
     if (isProcessing) return;
     
     const customerName = customerNameInput.value.trim();
-    const notes = notesInput.value.trim(); // Ambil nilai dari input catatan
+    const notes = notesInput.value.trim();
 
-    // VALIDASI LEBIH KETAT
-    if (!customerName) {
-        showNotification("❌ Nama pemesan harus diisi!");
-        customerNameInput.focus();
-        customerNameInput.classList.add('input-error');
-        return;
-    }
-
-    if (!validateCustomerName(customerName)) {
+    // VALIDASI
+    if (!customerName || !validateCustomerName(customerName)) {
         showNotification("❌ Harap masukkan nama pemesan yang valid!");
         customerNameInput.focus();
-        customerNameInput.select();
         customerNameInput.classList.add('input-error');
         return;
     }
 
-    // Data yang akan dikirim - KEY YANG KONSISTEN
-    const requestData = {
-        cart: cart,
-        customer_name: customerName,  // KEY UTAMA
-        customerNameFromJS: customerName, // Backup key
-        notes: notes // Kirim catatan ke server
-    };
-    
-    console.log('Data checkout yang dikirim:', requestData);
+    if (cart.length === 0) {
+        showNotification("❌ Keranjang kosong!");
+        return;
+    }
     
     showLoading();
 
     try {
-        const response = await fetch('api_checkout.php', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestData)
-        });
+        const saleTime = new Date().toISOString();
+        const insertedOrders = [];
 
-        console.log('Response status:', response.status);
-        const responseText = await response.text();
-        console.log('Response text:', responseText);
-        
-        let data;
-        try {
-            data = JSON.parse(responseText);
-        } catch (e) {
-            console.error('Gagal parse JSON:', e);
-            throw new Error('Format response tidak valid dari server. Silakan coba lagi.');
+        // Insert each cart item as separate order
+        for (const item of cart) {
+            const orderData = {
+                sale_date: saleTime,
+                product_code: item.code,
+                product_name: item.name,
+                price: item.price,
+                quantity: item.qty,
+                total: item.total,
+                customer_name: customerName,
+                notes: notes,
+                status: 'pending'
+            };
+            
+            const result = await supabaseClient.createOrder(orderData);
+            
+            if (result.success) {
+                insertedOrders.push(result.data.id);
+            } else {
+                throw new Error(`Gagal menyimpan pesanan untuk ${item.name}: ${result.error}`);
+            }
         }
         
-        if (data.success) {
-            const customerNameDisplay = data.data.customer_name || customerName;
-            showNotification(`✅ PESANAN BERHASIL! Atas nama: ${customerNameDisplay}`);
-            
-            // Reset cart and UI
-            cart = [];
-            renderCart();
-            
-            // Show success page
-            showPage('success-page');
-            
-            // Reset form
-            customerNameInput.value = '';
-            notesInput.value = ''; // Reset input catatan juga
-            customerNameInput.classList.remove('input-error');
-            
-            console.log('Checkout berhasil:', data.data);
-        } else {
-            throw new Error(data.message || 'Gagal memproses pesanan');
-        }
+        // Success
+        cart = [];
+        renderCart();
+        customerNameInput.value = '';
+        notesInput.value = '';
+        customerNameInput.classList.remove('input-error');
+        
+        showNotification(`✅ PESANAN BERHASIL! ${insertedOrders.length} item diproses.`);
+        showPage('success-page');
+        
+        console.log('Checkout berhasil:', insertedOrders);
         
     } catch (error) {
         console.error('Error checkout:', error);

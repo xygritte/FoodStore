@@ -1,7 +1,7 @@
 // Supabase Configuration
 const SUPABASE_CONFIG = {
-    url: 'https://YOUR_PROJECT_REF.supabase.co', // GANTI
-    key: 'YOUR_ANON_KEY' // GANTI
+    url: 'https://whngeaxjrrfgbldnelpq.supabase.co', // GANTI
+    key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndobmdlYXhqcnJmZ2JsZG5lbHBxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMxMDMyODIsImV4cCI6MjA3ODY3OTI4Mn0.40PLSwX4X2BxRCy-LXOubqbZR3gvB5JqFOyHUV5TS9s' // GANTI
 };
 
 // Supabase client
