@@ -348,8 +348,8 @@ body {
     position: absolute;
     top: -5px;
     right: -5px;
-    background: var(--primary-color);
-    color: white;
+    background: white;
+    color: var(--primary-color);
     border-radius: 50%;
     width: 18px;
     height: 18px;
