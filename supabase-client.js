@@ -67,6 +67,26 @@ class SupabaseClient {
         }
     }
 
+    // Get specific orders by their IDs
+    async getOrdersByIds(idList) {
+        if (!idList || idList.length === 0) {
+            return { success: true, orders: [] };
+        }
+        try {
+            const { data, error } = await supabase
+                .from('sales')
+                .select('*')
+                .in('id', idList) // <-- Filter penting
+                .order('sale_date', { ascending: false });
+            
+            if (error) throw error;
+            return { success: true, orders: data };
+        } catch (error) {
+            console.error('Error fetching orders by IDs:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
     // Update order status
     async updateOrderStatus(orderId, status) {
         try {

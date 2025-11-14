@@ -9,7 +9,7 @@
     --bg-light: #F8F9FA;
     --bg-white: #FFFFFF;
     --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    --shadow-light: 0 2px 4px rgba(0, 0, 0, 0.05);
+    --shadow-light: 0 2px 4px rgba(0, 0, 0, 0.08);
     --radius: 12px;
     --radius-sm: 8px;
     --transition: all 0.3s ease;
@@ -552,6 +552,132 @@ body {
     height: 40px;
     animation: spin 1s linear infinite;
     margin: 0 auto 15px;
+}
+
+/* === HISTORY PAGE STYLES (TAMBAHAN BARU) === */
+.history-list-container {
+    padding-bottom: 20px;
+}
+
+.history-group {
+    background: var(--bg-white);
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+    box-shadow: var(--shadow-light);
+    overflow: hidden;
+}
+
+.history-group-header {
+    padding: 15px;
+    background: rgb(207, 207, 207);
+    border-bottom: 1px solid #eee;
+}
+
+.history-customer {
+    font-weight: bold;
+    font-size: 1.1rem;
+    color: var(--primary-color);
+}
+
+.history-date {
+    font-size: 0.9rem;
+    color: var(--text-light);
+    margin-bottom: 5px;
+}
+
+.history-status {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    color: white;
+    margin-top: 10px;
+    text-transform: capitalize;
+}
+
+.status-pending { background-color: #f39c12; }
+.status-confirmed { background-color: #2ecc71; }
+.status-cancelled { background-color: #e74c3c; }
+.status-mixed { background-color: #3498db; }
+
+.history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.history-item:last-child {
+    border-bottom: none;
+}
+
+.history-item-info {
+    flex: 1;
+}
+
+.history-item-name {
+    font-weight: bold;
+}
+
+.history-item-details {
+    font-size: 0.9rem;
+    color: var(--text-light);
+}
+
+.history-total {
+    font-weight: bold;
+    text-align: right;
+    padding: 15px;
+    border-top: 1px solid #eee;
+    font-size: 1.1rem;
+}
+
+/* === TAMBAHAN BARU (Catatan Riwayat) === */
+.history-notes {
+    padding: 10px 15px;
+    background: #fffbef; /* Warna kuning muda seperti kertas catatan */
+    border-top: 1px solid #eee;
+    font-size: 0.9rem;
+    color: var(--text-dark);
+}
+
+.history-notes-text {
+    margin: 5px 0 0 0;
+    line-height: 1.4;
+    font-family: inherit; /* Pakai font yang sama dengan sisa web */
+    white-space: pre-wrap; /* Ini penting agar baris baru tampil */
+    word-wrap: break-word; /* Agar teks panjang tidak merusak layout */
+}
+/* === AKHIR TAMBAHAN === */
+
+.empty-history {
+    text-align: center;
+    color: var(--text-light);
+    padding: 30px 20px;
+}
+
+.empty-history-icon {
+    font-size: 3.5em;
+    margin-bottom: 15px;
+    opacity: 0.5;
+}
+
+.history-refresh-btn {
+    background: var(--secondary-color);
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: var(--transition);
+    font-weight: 600;
+    margin-bottom: 20px;
+    width: 100%;
+}
+.history-refresh-btn:hover {
+    opacity: 0.8;
 }
 
 @keyframes spin {
