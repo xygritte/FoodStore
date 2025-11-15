@@ -90,8 +90,77 @@ document.addEventListener('DOMContentLoaded', () => {
         return "Rp " + value.toLocaleString('id-ID');
     };
 
+    // === FIXED DATA HASHING FUNCTION ===
     const calculateDataHash = (data) => {
-        return btoa(JSON.stringify(data)).substring(0, 16);
+        try {
+            // Method 1: Menggunakan JSON stringify yang konsisten
+            const jsonString = JSON.stringify(data, Object.keys(data).sort());
+            
+            // Method 2: Simple hash function untuk string
+            let hash = 0;
+            for (let i = 0; i < jsonString.length; i++) {
+                const char = jsonString.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convert to 32bit integer
+            }
+            return hash.toString();
+            
+            // Alternatif: Gunakan crypto API jika available (lebih reliable)
+            // if (window.crypto && window.crypto.subtle) {
+            //     const encoder = new TextEncoder();
+            //     const dataBuffer = encoder.encode(jsonString);
+            //     const hashBuffer = await window.crypto.subtle.digest('SHA-256', dataBuffer);
+            //     const hashArray = Array.from(new Uint8Array(hashBuffer));
+            //     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+            // } else {
+            //     // Fallback ke simple hash
+            //     let hash = 0;
+            //     for (let i = 0; i < jsonString.length; i++) {
+            //         const char = jsonString.charCodeAt(i);
+            //         hash = ((hash << 5) - hash) + char;
+            //         hash = hash & hash;
+            //     }
+            //     return hash.toString();
+            // }
+        } catch (error) {
+            console.error('Error calculating hash:', error);
+            // Fallback: gunakan timestamp jika hash gagal
+            return Date.now().toString();
+        }
+    };
+
+    // === SIMPLIFIED DATA CHANGE DETECTION ===
+    const hasDataChanged = (newData, oldData, dataType) => {
+        // Jika data lama kosong dan data baru ada, berarti ada perubahan
+        if (!oldData || oldData.length === 0) {
+            return newData && newData.length > 0;
+        }
+        
+        // Jika panjang data berbeda, berarti ada perubahan
+        if (newData.length !== oldData.length) {
+            return true;
+        }
+        
+        // Untuk orders, check berdasarkan update time atau status changes
+        if (dataType === 'orders') {
+            // Cek apakah ada order yang statusnya berubah atau ada order baru
+            const latestOldOrder = oldData[0]?.updated_at || oldData[0]?.sale_date;
+            const latestNewOrder = newData[0]?.updated_at || newData[0]?.sale_date;
+            
+            if (latestNewOrder !== latestOldOrder) {
+                return true;
+            }
+            
+            // Cek perbedaan status untuk beberapa order terbaru
+            const checkCount = Math.min(5, newData.length);
+            for (let i = 0; i < checkCount; i++) {
+                if (newData[i]?.status !== oldData[i]?.status) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
     };
 
     // === NAVIGATION LOGIC ===
@@ -203,11 +272,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (error) throw error;
             
-            const currentHash = calculateDataHash(data);
+            const newData = data || [];
             
-            if (currentHash !== lastOrdersHash) {
-                orders = data || [];
-                lastOrdersHash = currentHash;
+            // Gunakan simplified data change detection
+            const dataChanged = hasDataChanged(newData, orders, 'orders');
+            
+            if (dataChanged) {
+                orders = newData;
                 groupOrders();
                 
                 requestAnimationFrame(() => {
@@ -568,11 +639,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (error) throw error;
             
-            const currentHash = calculateDataHash(data);
+            const newData = data || [];
+            const dataChanged = hasDataChanged(newData, products, 'products');
             
-            if (currentHash !== lastProductsHash) {
-                products = data || [];
-                lastProductsHash = currentHash;
+            if (dataChanged) {
+                products = newData;
                 
                 requestAnimationFrame(() => {
                     renderProducts();
