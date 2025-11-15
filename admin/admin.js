@@ -7,10 +7,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let autoRefresh = true;
     let autoRefreshTimer = null;
     let selectedOrders = new Set();
-    const REFRESH_INTERVAL = 5000; // 5 detik
+    let isRefreshing = false;
+    let lastOrdersHash = '';
+    let lastProductsHash = '';
+    const REFRESH_INTERVAL = 5000;
 
     // === ELEMENT SELECTORS ===
-    // Navigasi
     const tabButtons = document.querySelectorAll('.tab-btn');
     const mobileTabButtons = document.querySelectorAll('.mobile-tab-btn');
     const pages = document.querySelectorAll('.page');
@@ -67,11 +69,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // === HELPER FUNCTIONS ===
     const showLoading = (msg = null) => {
-        loadingOverlay.classList.add('active');
+        if (!isRefreshing) {
+            loadingOverlay.classList.add('active');
+        }
         if (msg) updateStatus(msg);
     };
     
-    const hideLoading = () => loadingOverlay.classList.remove('active');
+    const hideLoading = () => {
+        loadingOverlay.classList.remove('active');
+        isRefreshing = false;
+    };
     
     const updateStatus = (message, isError = false) => {
         statusBar.textContent = message;
@@ -81,6 +88,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const formatRupiah = (value) => {
         value = parseInt(value, 10) || 0;
         return "Rp " + value.toLocaleString('id-ID');
+    };
+
+    const calculateDataHash = (data) => {
+        return btoa(JSON.stringify(data)).substring(0, 16);
     };
 
     // === NAVIGATION LOGIC ===
@@ -93,10 +104,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelector(`.tab-btn[data-page="${pageId}"]`)?.classList.add('active');
         document.querySelector(`.mobile-tab-btn[data-page="${pageId}"]`)?.classList.add('active');
         
-        // Tutup mobile nav jika terbuka
         mobileNav.classList.remove('active');
         
-        // Muat data saat tab diaktifkan (jika data kosong)
         if (pageId === 'orders-page' && orders.length === 0) {
             loadOrders();
         } else if (pageId === 'products-page' && products.length === 0) {
@@ -112,13 +121,11 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', () => showPage(btn.dataset.page));
     });
 
-    // Mobile menu toggle
     mobileMenuBtn.addEventListener('click', () => {
         mobileNav.classList.toggle('active');
     });
 
     // === CHECKLIST SELECTION FUNCTIONS ===
-    
     const updateSelectedInfo = () => {
         selectedCount.textContent = selectedOrders.size;
         
@@ -133,14 +140,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const checkboxes = document.querySelectorAll('.order-checkbox');
         
         if (selectAllCheckbox.checked) {
-            // Pilih semua
             checkboxes.forEach(checkbox => {
                 checkbox.checked = true;
                 const groupKey = checkbox.dataset.groupKey;
                 selectedOrders.add(groupKey);
             });
         } else {
-            // Hapus semua pilihan
             checkboxes.forEach(checkbox => {
                 checkbox.checked = false;
             });
@@ -157,8 +162,6 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedOrders.add(groupKey);
         } else {
             selectedOrders.delete(groupKey);
-            
-            // Pastikan checkbox "pilih semua" tidak tercentang jika ada yang tidak dipilih
             selectAllCheckbox.checked = false;
         }
         
@@ -184,18 +187,15 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // === DATA LOADING & PROCESSING (ORDERS) ===
-    
-    /**
-     * Memuat semua pesanan dari Supabase
-     */
     async function loadOrders() {
+        if (isRefreshing) return;
+        
+        isRefreshing = true;
         ordersLoading.style.display = 'block';
         ordersNoData.style.display = 'none';
-        ordersTableBody.innerHTML = '';
         updateStatus('Memuat data pesanan...');
         
         try {
-            // Kita ambil semua pesanan, diurutkan terbaru dulu
             const { data, error } = await supabase
                 .from('sales')
                 .select('*')
@@ -203,35 +203,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (error) throw error;
             
-            orders = data || [];
-            groupOrders(); // Kelompokkan pesanan
-            renderOrders(); // Tampilkan ke tabel
-            updateDashboardStats(); // Update statistik
+            const currentHash = calculateDataHash(data);
             
-            const timestamp = new Date().toLocaleTimeString('id-ID');
-            updateStatus(`✅ Data pesanan terupdate ${timestamp} - ${orders.length} item`);
+            if (currentHash !== lastOrdersHash) {
+                orders = data || [];
+                lastOrdersHash = currentHash;
+                groupOrders();
+                
+                requestAnimationFrame(() => {
+                    renderOrders();
+                    updateDashboardStats();
+                });
+                
+                const timestamp = new Date().toLocaleTimeString('id-ID');
+                updateStatus(`✅ Data terupdate ${timestamp} - ${orders.length} item`);
+            } else {
+                const timestamp = new Date().toLocaleTimeString('id-ID');
+                updateStatus(`✅ Data sudah terbaru ${timestamp}`);
+            }
             
         } catch (error) {
             console.error('Error memuat pesanan:', error);
             updateStatus(`❌ Error memuat pesanan: ${error.message}`, true);
         } finally {
             ordersLoading.style.display = 'none';
+            isRefreshing = false;
             
-            // Tampilkan pesan "tidak ada data" jika diperlukan
             if (orders.length === 0) {
                 ordersNoData.style.display = 'block';
             }
         }
     }
 
-    /**
-     * Mengelompokkan pesanan individu berdasarkan customer + waktu (Mirip admin.py)
-     */
     function groupOrders() {
         groupedOrders = {};
         for (const order of orders) {
             const customer = order.customer_name || 'Unknown';
-            // Ambil hingga menit, abaikan detik/milidetik untuk pengelompokan
             const sale_date = order.sale_date.substring(0, 16); 
             const groupKey = `${customer}_${sale_date}`;
             
@@ -253,7 +260,6 @@ document.addEventListener('DOMContentLoaded', () => {
             groupedOrders[groupKey].order_ids.push(order.id);
         }
 
-        // Pass kedua: Tentukan status grup
         for (const key in groupedOrders) {
             const group = groupedOrders[key];
             const statuses = new Set(group.items.map(item => item.status || 'pending'));
@@ -261,111 +267,93 @@ document.addEventListener('DOMContentLoaded', () => {
             if (statuses.size === 1) {
                 group.status = statuses.values().next().value;
             } else if (statuses.has('pending')) {
-                group.status = 'mixed'; // Jika ada yg pending, anggap mixed
+                group.status = 'mixed';
             } else {
-                group.status = 'mixed'; // Default
+                group.status = 'mixed';
             }
         }
     }
 
-    /**
-     * Menampilkan pesanan yang sudah dikelompokkan ke tabel
-     */
     function renderOrders() {
-        ordersTableBody.innerHTML = ''; // Kosongkan tabel
         const filter = statusFilter.value;
-        const newRowElements = []; // Tampung elemen baru
+        const fragment = document.createDocumentFragment();
+        let hasVisibleData = false;
 
-        // Urutkan grup berdasarkan tanggal (sudah terurut dari 'loadOrders')
         const sortedGroups = Object.values(groupedOrders);
         
         if (sortedGroups.length === 0) {
             ordersNoData.style.display = 'block';
+            ordersTableBody.innerHTML = '';
             return;
         }
 
         sortedGroups.forEach(group => {
-            // Logika filter
             const status = group.status;
             if (filter !== 'semua') {
                 if (filter === 'pending' && (status !== 'pending' && status !== 'mixed')) {
-                    return; // Lewati jika filter 'pending' tapi status bukan 'pending'/'mixed'
+                    return;
                 } else if (filter !== 'pending' && filter !== status) {
-                    return; // Lewati jika status tidak cocok
+                    return;
                 }
             }
 
-            const tr = document.createElement('tr');
-            tr.dataset.groupKey = group.key; // Simpan key di DOM
-            
-            const notesDisplay = (group.notes.length > 50) ? group.notes.substring(0, 50) + '...' : group.notes;
-            const readableDate = new Date(group.datetime).toLocaleString('id-ID', {
-                day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
-            });
-
-            const isSelected = selectedOrders.has(group.key);
-
-            tr.innerHTML = `
-                <td class="checkbox-col">
-                    <input type="checkbox" class="order-checkbox" data-group-key="${group.key}" ${isSelected ? 'checked' : ''}>
-                </td>
-                <td>${readableDate}</td>
-                <td>${group.customer}</td>
-                <td>${group.items.length} item(s)</td>
-                <td>${formatRupiah(group.total_amount)}</td>
-                <td><span class="status-tag status-${group.status}">${group.status}</span></td>
-                <td>${notesDisplay}</td>
-            `;
-
-            // Tambahkan event listener untuk checkbox
-            const checkbox = tr.querySelector('.order-checkbox');
-            checkbox.addEventListener('change', (e) => {
-                e.stopPropagation(); // Mencegah event bubbling ke baris
-                toggleOrderSelection(checkbox);
-            });
-
-            // Tambahkan event listener untuk memilih baris
-            tr.addEventListener('click', (e) => {
-                // Jangan toggle selection jika klik berasal dari checkbox
-                if (e.target.type !== 'checkbox') {
-                    // Hapus .selected dari semua baris lain jika Shift tidak ditekan
-                    if (!e.shiftKey) {
-                        tr.parentElement.querySelectorAll('tr.selected').forEach(row => {
-                            if (row !== tr) row.classList.remove('selected');
-                        });
-                    }
-                    tr.classList.toggle('selected');
-                    
-                    // Toggle checkbox saat baris diklik
-                    checkbox.checked = !checkbox.checked;
-                    toggleOrderSelection(checkbox);
-                }
-            });
-
-            newRowElements.push(tr);
+            hasVisibleData = true;
+            const tr = createOrderRow(group);
+            fragment.appendChild(tr);
         });
 
-        // Tambahkan semua baris baru ke tabel
-        ordersTableBody.append(...newRowElements);
+        ordersTableBody.innerHTML = '';
+        ordersTableBody.appendChild(fragment);
+        
+        ordersNoData.style.display = hasVisibleData ? 'none' : 'block';
     }
 
-    /**
-     * Helper untuk mendapatkan key dari baris yang dipilih
-     */
-    function getSelectedRowKeys(tableBody) {
-        return [...tableBody.querySelectorAll('tr.selected')].map(tr => tr.dataset.groupKey);
-    }
-    
-    /**
-     * Helper untuk mendapatkan ID produk dari baris yang dipilih
-     */
-    function getSelectedProductIds(tableBody) {
-         return [...tableBody.querySelectorAll('tr.selected')].map(tr => tr.dataset.productId);
+    function createOrderRow(group) {
+        const tr = document.createElement('tr');
+        tr.dataset.groupKey = group.key;
+
+        const notesDisplay = (group.notes.length > 50) ? group.notes.substring(0, 50) + '...' : group.notes;
+        const readableDate = new Date(group.datetime).toLocaleString('id-ID', {
+            day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+
+        const isSelected = selectedOrders.has(group.key);
+
+        tr.innerHTML = `
+            <td class="checkbox-col">
+                <input type="checkbox" class="order-checkbox" data-group-key="${group.key}" ${isSelected ? 'checked' : ''}>
+            </td>
+            <td>${readableDate}</td>
+            <td>${group.customer}</td>
+            <td>${group.items.length} item(s)</td>
+            <td>${formatRupiah(group.total_amount)}</td>
+            <td><span class="status-tag status-${group.status}">${group.status}</span></td>
+            <td>${notesDisplay}</td>
+        `;
+
+        const checkbox = tr.querySelector('.order-checkbox');
+        checkbox.addEventListener('change', (e) => {
+            e.stopPropagation();
+            toggleOrderSelection(checkbox);
+        });
+
+        tr.addEventListener('click', (e) => {
+            if (e.target.type !== 'checkbox') {
+                if (!e.shiftKey) {
+                    tr.parentElement.querySelectorAll('tr.selected').forEach(row => {
+                        if (row !== tr) row.classList.remove('selected');
+                    });
+                }
+                tr.classList.toggle('selected');
+                
+                checkbox.checked = !checkbox.checked;
+                toggleOrderSelection(checkbox);
+            }
+        });
+
+        return tr;
     }
 
-    /**
-     * Memperbarui statistik dashboard
-     */
     function updateDashboardStats() {
         let totalSales = 0;
         let totalSold = 0;
@@ -390,10 +378,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // === ORDER ACTIONS ===
-    
-    /**
-     * Mengupdate status pesanan (Konfirmasi / Batal)
-     */
     async function updateOrderStatus(newStatus) {
         if (selectedOrders.size === 0) {
             alert(`Pilih satu atau lebih pesanan untuk di-${newStatus}.`);
@@ -407,7 +391,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         showLoading(`Sedang ${actionText} pesanan...`);
         
-        // Kumpulkan semua ID item dari grup yang dipilih
         let allItemIds = [];
         selectedOrders.forEach(key => {
             if (groupedOrders[key]) {
@@ -422,7 +405,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         try {
-            // Update status pesanan
             const { data, error } = await supabase
                 .from('sales')
                 .update({ 
@@ -435,8 +417,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error) throw error;
             
             updateStatus(`✅ Berhasil: ${data.length} item telah di-${newStatus}.`);
-            await loadOrders(); // Muat ulang data
-            clearAllSelections(); // Bersihkan pilihan setelah update
+            await loadOrders();
+            clearAllSelections();
             
         } catch (error) {
             console.error(`Gagal ${actionText} pesanan:`, error);
@@ -446,9 +428,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /**
-     * Menampilkan detail pesanan di modal
-     */
     function viewOrderDetails() {
         if (selectedOrders.size !== 1) {
             alert('Pilih HANYA SATU pesanan untuk dilihat detailnya.');
@@ -494,9 +473,6 @@ document.addEventListener('DOMContentLoaded', () => {
         modalOverlay.classList.add('active');
     }
 
-    /**
-     * Menampilkan struk untuk di-print di modal
-     */
     function printOrder() {
         if (selectedOrders.size !== 1) {
             alert('Pilih HANYA SATU pesanan untuk di-print.');
@@ -511,7 +487,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Helper untuk formatting struk
         const pad = (str, len, char = ' ') => String(str).padEnd(len, char);
         const rpad = (str, len, char = ' ') => String(str).padStart(len, char);
 
@@ -547,7 +522,6 @@ document.addEventListener('DOMContentLoaded', () => {
         modalBody.textContent = details;
         modalOverlay.classList.add('active');
         
-        // Opsional: Tambahkan tombol print
         const printBtn = document.createElement('button');
         printBtn.textContent = '🖨️ Print';
         printBtn.className = 'btn btn-neutral';
@@ -578,18 +552,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // === DATA LOADING & PROCESSING (PRODUCTS) ===
-
-    /**
-     * Memuat semua produk dari Supabase
-     */
     async function loadProducts() {
+        if (isRefreshing) return;
+        
+        isRefreshing = true;
         productsLoading.style.display = 'block';
         productsNoData.style.display = 'none';
-        productsTableBody.innerHTML = '';
         updateStatus('Memuat data produk...');
         
         try {
-            // Ambil semua produk
             const { data, error } = await supabase
                 .from('products')
                 .select('*')
@@ -597,72 +568,83 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (error) throw error;
             
-            products = data || [];
-            renderProducts();
+            const currentHash = calculateDataHash(data);
             
-            const timestamp = new Date().toLocaleTimeString('id-ID');
-            updateStatus(`✅ Data produk terupdate ${timestamp} - ${products.length} produk`);
+            if (currentHash !== lastProductsHash) {
+                products = data || [];
+                lastProductsHash = currentHash;
+                
+                requestAnimationFrame(() => {
+                    renderProducts();
+                });
+                
+                const timestamp = new Date().toLocaleTimeString('id-ID');
+                updateStatus(`✅ Data produk terupdate ${timestamp} - ${products.length} produk`);
+            } else {
+                const timestamp = new Date().toLocaleTimeString('id-ID');
+                updateStatus(`✅ Data produk sudah terbaru ${timestamp}`);
+            }
             
         } catch (error) {
             console.error('Error memuat produk:', error);
             updateStatus(`❌ Error memuat produk: ${error.message}`, true);
         } finally {
             productsLoading.style.display = 'none';
+            isRefreshing = false;
             
-            // Tampilkan pesan "tidak ada data" jika diperlukan
             if (products.length === 0) {
                 productsNoData.style.display = 'block';
             }
         }
     }
 
-    /**
-     * Menampilkan produk ke tabel
-     */
     function renderProducts() {
-        productsTableBody.innerHTML = '';
+        const fragment = document.createDocumentFragment();
         
         if (products.length === 0) {
             productsNoData.style.display = 'block';
+            productsTableBody.innerHTML = '';
             return;
         }
 
         products.forEach(product => {
-            const tr = document.createElement('tr');
-            tr.dataset.productId = product.id; // Simpan ID
-            
-            // Simpan data produk di elemen untuk 'edit'
-            tr.dataset.product = JSON.stringify(product); 
-
-            tr.innerHTML = `
-                <td>${product.id}</td>
-                <td>${product.code}</td>
-                <td>${product.name}</td>
-                <td>${formatRupiah(product.price)}</td>
-            `;
-
-            // Event listener untuk memilih + mengisi form (untuk edit)
-            tr.addEventListener('click', (e) => {
-                // Hapus .selected dari semua baris lain
-                tr.parentElement.querySelectorAll('tr.selected').forEach(row => {
-                    if (row !== tr) row.classList.remove('selected');
-                });
-                tr.classList.toggle('selected');
-                
-                // Jika dipilih, isi form
-                if (tr.classList.contains('selected')) {
-                    fillProductForm(product);
-                } else {
-                    clearProductForm(); // Jika di-unselect, bersihkan form
-                }
-            });
-
-            productsTableBody.appendChild(tr);
+            const tr = createProductRow(product);
+            fragment.appendChild(tr);
         });
+
+        productsTableBody.innerHTML = '';
+        productsTableBody.appendChild(fragment);
+    }
+
+    function createProductRow(product) {
+        const tr = document.createElement('tr');
+        tr.dataset.productId = product.id;
+        tr.dataset.product = JSON.stringify(product);
+
+        tr.innerHTML = `
+            <td>${product.id}</td>
+            <td>${product.code}</td>
+            <td>${product.name}</td>
+            <td>${formatRupiah(product.price)}</td>
+        `;
+
+        tr.addEventListener('click', (e) => {
+            tr.parentElement.querySelectorAll('tr.selected').forEach(row => {
+                if (row !== tr) row.classList.remove('selected');
+            });
+            tr.classList.toggle('selected');
+            
+            if (tr.classList.contains('selected')) {
+                fillProductForm(product);
+            } else {
+                clearProductForm();
+            }
+        });
+
+        return tr;
     }
 
     // === PRODUCT ACTIONS ===
-
     function fillProductForm(product) {
         productIdInput.value = product.id;
         productNameInput.value = product.name;
@@ -675,19 +657,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function clearProductForm() {
         productForm.reset();
-        productIdInput.value = ''; // Pastikan ID hidden juga kosong
+        productIdInput.value = '';
         saveProductBtn.textContent = '➕ Tambah Produk';
         saveProductBtn.classList.remove('btn-info');
         saveProductBtn.classList.add('btn-success');
-        // Hapus seleksi di tabel
         productsTableBody.querySelectorAll('tr.selected').forEach(row => {
             row.classList.remove('selected');
         });
     }
 
-    /**
-     * Menangani submit form produk (Tambah / Update)
-     */
     async function handleSaveProduct(e) {
         e.preventDefault();
         
@@ -713,7 +691,6 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             let result;
             if (id) {
-                // === UPDATE ===
                 const { data, error } = await supabase
                     .from('products')
                     .update(productData)
@@ -723,7 +700,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 result = data[0];
                 updateStatus(`✅ Produk '${result.name}' berhasil di-update.`);
             } else {
-                // === CREATE ===
                 const { data, error } = await supabase
                     .from('products')
                     .insert([productData])
@@ -734,7 +710,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             clearProductForm();
-            await loadProducts(); // Muat ulang daftar produk
+            await loadProducts();
             
         } catch (error) {
             console.error('Gagal menyimpan produk:', error);
@@ -745,11 +721,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /**
-     * Menghapus produk yang dipilih
-     */
     async function deleteSelectedProducts() {
-        const selectedIds = getSelectedProductIds(productsTableBody);
+        const selectedIds = [...productsTableBody.querySelectorAll('tr.selected')].map(tr => tr.dataset.productId);
         
         if (selectedIds.length === 0) {
             alert('Pilih satu atau lebih produk untuk dihapus.');
@@ -771,7 +744,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error) throw error;
             
             updateStatus(`✅ Berhasil menghapus ${selectedIds.length} produk.`);
-            await loadProducts(); // Muat ulang
+            await loadProducts();
             clearProductForm();
             
         } catch (error) {
@@ -782,14 +755,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /**
-     * Membuat kode produk otomatis (Mirip admin.py)
-     */
     function generateProductCode() {
         let maxNum = 0;
-        let prefix = 'P'; // Default
+        let prefix = 'P';
         
-        // Coba tentukan prefix dari produk terakhir (misal: MK/MN)
         if (products.length > 0) {
             const lastCode = products[products.length - 1].code;
             if (lastCode.startsWith('MK')) prefix = 'MK';
@@ -801,7 +770,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const num = parseInt(product.code.substring(prefix.length), 10);
                     if (num > maxNum) maxNum = num;
-                } catch (e) { /* abaikan */ }
+                } catch (e) { }
             }
         });
         
@@ -814,7 +783,7 @@ document.addEventListener('DOMContentLoaded', () => {
         autoRefresh = autoRefreshToggle.checked;
         if (autoRefresh) {
             startAutoRefresh();
-            updateStatus('Auto-refresh diaktifkan.');
+            updateStatus('Auto-refresh diaktifkan (optimized).');
         } else {
             clearInterval(autoRefreshTimer);
             autoRefreshTimer = null;
@@ -823,9 +792,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function startAutoRefresh() {
-        if (autoRefreshTimer) clearInterval(autoRefreshTimer); // Hapus timer lama
+        if (autoRefreshTimer) clearInterval(autoRefreshTimer);
         if (autoRefresh) {
-            autoRefreshTimer = setInterval(refreshCurrentTabData, REFRESH_INTERVAL);
+            autoRefreshTimer = setInterval(() => {
+                if (!isRefreshing) {
+                    refreshCurrentTabData();
+                }
+            }, REFRESH_INTERVAL);
         }
     }
 
@@ -839,7 +812,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // === EVENT LISTENERS ===
-    // Pesanan
     statusFilter.addEventListener('change', renderOrders);
     refreshOrdersBtn.addEventListener('click', loadOrders);
     confirmOrderBtn.addEventListener('click', () => updateOrderStatus('confirmed'));
@@ -850,26 +822,23 @@ document.addEventListener('DOMContentLoaded', () => {
     clearSelectionBtn.addEventListener('click', clearAllSelections);
     selectAllCheckbox.addEventListener('change', toggleSelectAll);
 
-    // Produk
     productForm.addEventListener('submit', handleSaveProduct);
     clearFormBtn.addEventListener('click', clearProductForm);
     generateCodeBtn.addEventListener('click', generateProductCode);
     refreshProductsBtn.addEventListener('click', loadProducts);
     deleteProductBtn.addEventListener('click', deleteSelectedProducts);
 
-    // Modal
     closeModalBtn.addEventListener('click', () => {
         modalOverlay.classList.remove('active');
-        // Hapus tombol print jika ada
         const printBtn = modalContent.querySelector('.btn-neutral');
         if (printBtn && printBtn.textContent.includes('Print')) {
             printBtn.remove();
         }
     });
+    
     modalOverlay.addEventListener('click', (e) => {
         if (e.target === modalOverlay) {
             modalOverlay.classList.remove('active');
-            // Hapus tombol print jika ada
             const printBtn = modalContent.querySelector('.btn-neutral');
             if (printBtn && printBtn.textContent.includes('Print')) {
                 printBtn.remove();
@@ -877,10 +846,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Global
     autoRefreshToggle.addEventListener('change', toggleAutoRefresh);
 
-    // Tutup mobile nav saat klik di luar
     document.addEventListener('click', (e) => {
         if (!mobileNav.contains(e.target) && !mobileMenuBtn.contains(e.target)) {
             mobileNav.classList.remove('active');
@@ -889,9 +856,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // === INITIALIZATION ===
     updateStatus('Menghubungkan ke Supabase...');
-    showPage('orders-page'); // Tampilkan halaman pesanan saat pertama kali muat
-    loadOrders(); // Muat data pesanan awal
-    loadProducts(); // Muat data produk di background
-    startAutoRefresh(); // Mulai auto-refresh
-    updateSelectedInfo(); // Inisialisasi info pilihan
+    showPage('orders-page');
+    loadOrders();
+    loadProducts();
+    startAutoRefresh();
+    updateSelectedInfo();
 });
