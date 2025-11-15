@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Warung Bieem</title>
+    <link rel="stylesheet" href="admin.css">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon_io/favicon-32x32.png">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/supabase-client.js"></script>
+</head>
+<body>
+
+    <header class="header">
+        <div class="header-container">
+            <h1>🏪 Admin Warung Bieem</h1>
+            <div class="header-actions">
+                <label class="auto-refresh">
+                    <input type="checkbox" id="auto-refresh-toggle" checked>
+                    🔄 Auto-Refresh (5s)
+                </label>
+                <button class="mobile-menu-btn" id="mobile-menu-btn">☰</button>
+            </div>
+        </div>
+    </header>
+
+    <div class="mobile-nav" id="mobile-nav">
+        <button class="mobile-tab-btn active" data-page="orders-page">📋 Kelola Pesanan</button>
+        <button class="mobile-tab-btn" data-page="products-page">📦 Kelola Produk</button>
+    </div>
+
+    <nav class="tabs">
+        <button class="tab-btn active" data-page="orders-page">📋 Kelola Pesanan</button>
+        <button class="tab-btn" data-page="products-page">📦 Kelola Produk</button>
+    </nav>
+
+    <main class="container">
+        
+        <div class="page active" id="orders-page">
+            
+            <section class="card" id="dashboard-stats">
+                <h2 class="section-title">Statistik Penjualan (Confirmed)</h2>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-label">Total Penjualan</span>
+                        <span class="stat-value" id="stat-total-sales">Rp 0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Produk Terjual</span>
+                        <span class="stat-value" id="stat-total-sold">0 pcs</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Pesanan Pending</span>
+                        <span class="stat-value" id="stat-pending-orders">0 item</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Pesanan Confirmed</span>
+                        <span class="stat-value" id="stat-confirmed-orders">0 item</span>
+                    </div>
+                </div>
+            </section>
+            
+            <section class="card" id="order-controls">
+                <div class="filter-group">
+                    <label for="status-filter">Filter Status:</label>
+                    <select id="status-filter">
+                        <option value="semua">Semua</option>
+                        <option value="pending">Pending (termasuk mixed)</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                    <button class="btn" id="refresh-orders-btn">🔄 Refresh</button>
+                </div>
+                <div class="selected-info" id="selected-info">
+                    <span id="selected-count">0</span> pesanan dipilih
+                </div>
+                <div class="action-buttons">
+                    <button class="btn btn-success" id="confirm-order-btn">✅ Konfirmasi</button>
+                    <button class="btn btn-danger" id="cancel-order-btn">❌ Batalkan</button>
+                    <button class="btn btn-info" id="view-order-btn">👁️ Lihat Detail</button>
+                    <button class="btn btn-neutral" id="print-order-btn">🖨️ Print</button>
+                    <button class="btn" id="select-all-btn">Pilih Semua</button>
+                    <button class="btn" id="clear-selection-btn">Bersihkan Pilihan</button>
+                </div>
+            </section>
+
+            <section class="table-container">
+                <table class="data-table" id="orders-table">
+                    <thead>
+                        <tr>
+                            <th class="checkbox-col">
+                                <input type="checkbox" id="select-all-checkbox">
+                            </th>
+                            <th>Waktu Pesan</th>
+                            <th>Customer</th>
+                            <th>Items</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                            <th>Catatan</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-table-body">
+                        <!-- Data akan diisi oleh JavaScript -->
+                    </tbody>
+                </table>
+                <div class="table-loading" id="orders-loading">Memuat data pesanan...</div>
+                <div class="no-data" id="orders-no-data" style="display:none;">
+                    <p>Tidak ada data pesanan yang sesuai dengan filter.</p>
+                </div>
+            </section>
+        </div>
+
+        <div class="page" id="products-page">
+            <div class="product-layout">
+                
+                <section class="card" id="add-product-form">
+                    <h2 class="section-title">Tambah/Edit Produk</h2>
+                    <form id="product-form">
+                        <input type="hidden" id="product-id">
+                        <div class="form-group">
+                            <label for="product-name">Nama Produk:</label>
+                            <input type="text" id="product-name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="product-price">Harga:</label>
+                            <input type="number" id="product-price" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="product-code">Kode:</label>
+                            <div class="input-group">
+                                <input type="text" id="product-code" required>
+                                <button type="button" class="btn btn-neutral" id="generate-code-btn">Generate</button>
+                            </div>
+                        </div>
+                        <div class="action-buttons">
+                            <button type="submit" class="btn btn-success" id="save-product-btn">➕ Tambah Produk</button>
+                            <button type="button" class="btn" id="clear-form-btn">Clear</button>
+                        </div>
+                    </form>
+                </section>
+
+                <section class="card" id="product-list-container">
+                    <h2 class="section-title">Daftar Produk</h2>
+                    <div class="action-buttons">
+                        <button class="btn" id="refresh-products-btn">🔄 Refresh</button>
+                        <button class="btn btn-danger" id="delete-product-btn">🗑️ Hapus Pilihan</button>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="products-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Kode</th>
+                                    <th>Nama Produk</th>
+                                    <th>Harga</th>
+                                </tr>
+                            </thead>
+                            <tbody id="products-table-body">
+                                <!-- Data akan diisi oleh JavaScript -->
+                            </tbody>
+                        </table>
+                        <div class="table-loading" id="products-loading">Memuat data produk...</div>
+                        <div class="no-data" id="products-no-data" style="display:none;">
+                            <p>Tidak ada data produk.</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <footer class="status-bar" id="status-bar">
+        Ready.
+    </footer>
+
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal-content" id="modal-content">
+            <h3 id="modal-title">Detail Pesanan</h3>
+            <pre id="modal-body"></pre>
+            <button class="btn" id="close-modal-btn">Tutup</button>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="spinner"></div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>
