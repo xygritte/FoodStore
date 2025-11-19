@@ -8,8 +8,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let autoRefreshTimer = null;
     let selectedOrders = new Set();
     let isRefreshing = false;
-    let lastOrdersHash = '';
-    let lastProductsHash = '';
     const REFRESH_INTERVAL = 5000;
 
     // === ELEMENT SELECTORS ===
@@ -63,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Modal
     const modalOverlay = document.getElementById('modal-overlay');
+    const modalContent = document.getElementById('modal-content'); 
     const modalTitle = document.getElementById('modal-title');
     const modalBody = document.getElementById('modal-body');
     const closeModalBtn = document.getElementById('close-modal-btn');
@@ -90,60 +89,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return "Rp " + value.toLocaleString('id-ID');
     };
 
-    // === FIXED DATA HASHING FUNCTION ===
-    const calculateDataHash = (data) => {
-        try {
-            // Method 1: Menggunakan JSON stringify yang konsisten
-            const jsonString = JSON.stringify(data, Object.keys(data).sort());
-            
-            // Method 2: Simple hash function untuk string
-            let hash = 0;
-            for (let i = 0; i < jsonString.length; i++) {
-                const char = jsonString.charCodeAt(i);
-                hash = ((hash << 5) - hash) + char;
-                hash = hash & hash; // Convert to 32bit integer
-            }
-            return hash.toString();
-            
-            // Alternatif: Gunakan crypto API jika available (lebih reliable)
-            // if (window.crypto && window.crypto.subtle) {
-            //     const encoder = new TextEncoder();
-            //     const dataBuffer = encoder.encode(jsonString);
-            //     const hashBuffer = await window.crypto.subtle.digest('SHA-256', dataBuffer);
-            //     const hashArray = Array.from(new Uint8Array(hashBuffer));
-            //     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
-            // } else {
-            //     // Fallback ke simple hash
-            //     let hash = 0;
-            //     for (let i = 0; i < jsonString.length; i++) {
-            //         const char = jsonString.charCodeAt(i);
-            //         hash = ((hash << 5) - hash) + char;
-            //         hash = hash & hash;
-            //     }
-            //     return hash.toString();
-            // }
-        } catch (error) {
-            console.error('Error calculating hash:', error);
-            // Fallback: gunakan timestamp jika hash gagal
-            return Date.now().toString();
-        }
-    };
-
     // === SIMPLIFIED DATA CHANGE DETECTION ===
     const hasDataChanged = (newData, oldData, dataType) => {
-        // Jika data lama kosong dan data baru ada, berarti ada perubahan
         if (!oldData || oldData.length === 0) {
             return newData && newData.length > 0;
         }
         
-        // Jika panjang data berbeda, berarti ada perubahan
         if (newData.length !== oldData.length) {
             return true;
         }
         
-        // Untuk orders, check berdasarkan update time atau status changes
         if (dataType === 'orders') {
-            // Cek apakah ada order yang statusnya berubah atau ada order baru
             const latestOldOrder = oldData[0]?.updated_at || oldData[0]?.sale_date;
             const latestNewOrder = newData[0]?.updated_at || newData[0]?.sale_date;
             
@@ -151,10 +107,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 return true;
             }
             
-            // Cek perbedaan status untuk beberapa order terbaru
             const checkCount = Math.min(5, newData.length);
             for (let i = 0; i < checkCount; i++) {
                 if (newData[i]?.status !== oldData[i]?.status) {
+                    return true;
+                }
+                if (newData[i]?.payment_proof_url !== oldData[i]?.payment_proof_url) {
                     return true;
                 }
             }
@@ -273,8 +231,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error) throw error;
             
             const newData = data || [];
-            
-            // Gunakan simplified data change detection
             const dataChanged = hasDataChanged(newData, orders, 'orders');
             
             if (dataChanged) {
@@ -322,13 +278,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     total_amount: 0,
                     status: 'mixed',
                     notes: order.notes || '',
-                    order_ids: []
+                    order_ids: [],
+                    payment_proof: null 
                 };
             }
             
             groupedOrders[groupKey].items.push(order);
             groupedOrders[groupKey].total_amount += order.total || 0;
             groupedOrders[groupKey].order_ids.push(order.id);
+            
+            // Cek Bukti Pembayaran (payment_proof_url)
+            if (order.payment_proof_url) {
+                groupedOrders[groupKey].payment_proof = order.payment_proof_url;
+            }
         }
 
         for (const key in groupedOrders) {
@@ -390,12 +352,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const isSelected = selectedOrders.has(group.key);
 
+        // Icon Bukti Pembayaran
+        const proofIcon = group.payment_proof 
+            ? '<span title="Ada Bukti Pembayaran" style="cursor:help; margin-left:5px;">📸</span>' 
+            : '';
+
+        // Nama Customer Sebagai Link
+        const customerHtml = `<a href="#" class="customer-link">${group.customer}</a>`;
+
         tr.innerHTML = `
             <td class="checkbox-col">
                 <input type="checkbox" class="order-checkbox" data-group-key="${group.key}" ${isSelected ? 'checked' : ''}>
             </td>
             <td>${readableDate}</td>
-            <td>${group.customer}</td>
+            <td>${customerHtml} ${proofIcon}</td>
             <td>${group.items.length} item(s)</td>
             <td>${formatRupiah(group.total_amount)}</td>
             <td><span class="status-tag status-${group.status}">${group.status}</span></td>
@@ -408,8 +378,18 @@ document.addEventListener('DOMContentLoaded', () => {
             toggleOrderSelection(checkbox);
         });
 
+        // Event Listener Klik Nama (Buka Detail)
+        const nameLink = tr.querySelector('.customer-link');
+        if (nameLink) {
+            nameLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation(); 
+                viewOrderDetails(group.key); 
+            });
+        }
+
         tr.addEventListener('click', (e) => {
-            if (e.target.type !== 'checkbox') {
+            if (e.target.type !== 'checkbox' && !e.target.classList.contains('customer-link')) {
                 if (!e.shiftKey) {
                     tr.parentElement.querySelectorAll('tr.selected').forEach(row => {
                         if (row !== tr) row.classList.remove('selected');
@@ -499,19 +479,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function viewOrderDetails() {
-        if (selectedOrders.size !== 1) {
-            alert('Pilih HANYA SATU pesanan untuk dilihat detailnya.');
-            return;
+    function viewOrderDetails(specificGroupKey = null) {
+        let groupKey;
+
+        // Logika: Bisa dipanggil dari klik nama (specificGroupKey) atau tombol "Lihat Detail"
+        if (typeof specificGroupKey === 'string') {
+            groupKey = specificGroupKey;
+        } else {
+            if (selectedOrders.size !== 1) {
+                alert('Pilih HANYA SATU pesanan untuk dilihat detailnya.');
+                return;
+            }
+            groupKey = Array.from(selectedOrders)[0];
         }
         
-        const groupKey = Array.from(selectedOrders)[0];
         const group = groupedOrders[groupKey];
         
         if (!group) {
             alert('Data pesanan tidak ditemukan.');
             return;
         }
+
+        // Bersihkan gambar lama
+        const existingImg = modalContent.querySelector('.proof-image-container');
+        if (existingImg) existingImg.remove();
 
         let details = `
         👤 CUSTOMER: ${group.customer}
@@ -539,8 +530,31 @@ document.addEventListener('DOMContentLoaded', () => {
         ${group.notes || 'Tidak ada catatan'}
         `;
 
+        if (!group.payment_proof) {
+            details += `\n(Belum ada bukti pembayaran)`;
+        }
+
         modalTitle.textContent = 'Detail Group Pesanan';
         modalBody.textContent = details;
+
+        if (group.payment_proof) {
+            const imgContainer = document.createElement('div');
+            imgContainer.className = 'proof-image-container';
+            imgContainer.style.marginTop = '15px';
+            imgContainer.style.textAlign = 'center';
+            imgContainer.style.borderTop = '1px solid #eee';
+            imgContainer.style.paddingTop = '10px';
+            
+            imgContainer.innerHTML = `
+                <h4 style="margin-bottom:10px; color:var(--primary-color);">📸 Bukti Pembayaran</h4>
+                <a href="${group.payment_proof}" target="_blank" title="Klik untuk memperbesar">
+                    <img src="${group.payment_proof}" style="max-width: 100%; max-height: 300px; border-radius: 8px; border: 1px solid #ddd; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+                </a>
+            `;
+            
+            modalBody.parentNode.insertBefore(imgContainer, modalBody.nextSibling);
+        }
+
         modalOverlay.classList.add('active');
     }
 
@@ -589,6 +603,10 @@ document.addEventListener('DOMContentLoaded', () => {
         details += "    Terima kasih atas pesanan Anda!     \n";
         details += "========================================\n";
 
+        // Bersihkan gambar jika ada 
+        const existingImg = modalContent.querySelector('.proof-image-container');
+        if (existingImg) existingImg.remove();
+
         modalTitle.textContent = 'Struk Pesanan (Siap Print)';
         modalBody.textContent = details;
         modalOverlay.classList.add('active');
@@ -619,6 +637,7 @@ document.addEventListener('DOMContentLoaded', () => {
             printWindow.document.close();
         };
         
+        // Insert print button before close button
         modalContent.querySelector('#close-modal-btn').insertAdjacentElement('beforebegin', printBtn);
     }
 
@@ -786,7 +805,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Gagal menyimpan produk:', error);
             updateStatus(`❌ Gagal menyimpan produk: ${error.message}`, true);
-            alert(`Gagal menyimpan produk: ${error.message}\n\n(Pastikan RLS (Row Level Security) di Supabase mengizinkan operasi 'insert' atau 'update' untuk tabel 'products'.)`);
         } finally {
             hideLoading();
         }
@@ -887,7 +905,7 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshOrdersBtn.addEventListener('click', loadOrders);
     confirmOrderBtn.addEventListener('click', () => updateOrderStatus('confirmed'));
     cancelOrderBtn.addEventListener('click', () => updateOrderStatus('cancelled'));
-    viewOrderBtn.addEventListener('click', viewOrderDetails);
+    viewOrderBtn.addEventListener('click', () => viewOrderDetails()); // Default without args
     printOrderBtn.addEventListener('click', printOrder);
     selectAllBtn.addEventListener('click', selectAllOrders);
     clearSelectionBtn.addEventListener('click', clearAllSelections);

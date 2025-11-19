@@ -413,7 +413,55 @@ async function loadOrderHistory() {
     }
 }
 
+async function handleProofUpload(event, itemIds) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Validasi Tipe File
+    if (!['image/jpeg', 'image/jpg', 'image/png'].includes(file.type)) {
+        alert('Hanya file JPG atau PNG yang diperbolehkan!');
+        return;
+    }
+
+    // Validasi Ukuran (Misal max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+        alert('Ukuran file terlalu besar! Maksimal 2MB.');
+        return;
+    }
+
+    const confirmUpload = confirm("Upload screenshot bukti pembayaran ini?");
+    if (!confirmUpload) {
+        event.target.value = ''; // Reset input
+        return;
+    }
+
+    showNotification("⏳ Mengupload bukti pembayaran...");
+    
+    try {
+        // 1. Upload File
+        const uploadResult = await supabaseClient.uploadProofImage(file);
+        if (!uploadResult.success) throw new Error(uploadResult.error);
+
+        // 2. Update Database
+        const updateResult = await supabaseClient.updateOrderProof(itemIds, uploadResult.url);
+        if (!updateResult.success) throw new Error(updateResult.error);
+
+        showNotification("✅ Bukti pembayaran berhasil diupload!");
+        
+        // 3. Refresh Riwayat
+        loadOrderHistory();
+
+    } catch (error) {
+        console.error("Upload gagal:", error);
+        showNotification(`❌ Upload gagal: ${error.message}`);
+    }
+}
+
+// Expose ke window
+window.handleProofUpload = handleProofUpload;
+
 function renderOrderHistory(orders, status) {
+    // 1. Cek Status Error atau Kosong
     if (status === 'empty') {
         historyListContainer.innerHTML = `
             <div class="empty-history">
@@ -435,32 +483,36 @@ function renderOrderHistory(orders, status) {
         return;
     }
     
-    // Kelompokkan pesanan berdasarkan sale_date + customer_name (kunci "sesi")
+    // 2. Pengelompokan Pesanan (Grouping)
     const groupedOrders = {};
     for (const order of orders) {
+        // Gunakan kombinasi nama dan tanggal sebagai kunci unik grup pesanan
         const groupKey = `${order.customer_name}_${order.sale_date}`;
+        
         if (!groupedOrders[groupKey]) {
             groupedOrders[groupKey] = {
+                key: groupKey, // Simpan key untuk ID unik elemen
                 customer: order.customer_name,
                 datetime: order.sale_date,
                 notes: order.notes,
-                items: [], // Pastikan 'items' ada di sini
+                items: [],
                 total_amount: 0,
                 status: 'mixed'
             };
         }
         
-        groupedOrders[groupKey].items.push(order); // 'items' diisi di sini
+        groupedOrders[groupKey].items.push(order);
         groupedOrders[groupKey].total_amount += order.total;
     }
     
-    // Tentukan status grup dan urutkan grup
+    // 3. Tentukan Status Grup dan Urutkan (Terbaru paling atas)
     const sortedGroups = Object.values(groupedOrders).map(group => {
         const statuses = new Set(group.items.map(item => item.status));
+        
         if (statuses.size === 1) {
-            group.status = statuses.values().next().value;
+            group.status = statuses.values().next().value; // Semua item statusnya sama
         } else if (statuses.has('pending')) {
-            group.status = 'mixed';
+            group.status = 'mixed'; // Ada yang pending, ada yang lain
         } else if (statuses.has('confirmed')) {
             group.status = 'confirmed';
         } else {
@@ -469,7 +521,7 @@ function renderOrderHistory(orders, status) {
         return group;
     }).sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
 
-    // Bersihkan kontainer
+    // 4. Bersihkan Container & Tambah Tombol Refresh
     historyListContainer.innerHTML = '';
     
     const refreshBtn = document.createElement('button');
@@ -488,11 +540,12 @@ function renderOrderHistory(orders, status) {
         return;
     }
 
-    // Render setiap grup pesanan
+    // 5. Render Setiap Grup Pesanan
     for (const group of sortedGroups) {
         const groupEl = document.createElement('div');
         groupEl.className = 'history-group';
         
+        // Generate HTML untuk Item Pesanan
         let itemsHtml = '';
         for (const item of group.items) {
             itemsHtml += `
@@ -508,11 +561,13 @@ function renderOrderHistory(orders, status) {
             `;
         }
 
+        // Format Tanggal
         const readableDate = new Date(group.datetime).toLocaleString('id-ID', {
             day: '2-digit', month: 'long', year: 'numeric',
             hour: '2-digit', minute: '2-digit'
         });
 
+        // HTML untuk Catatan (jika ada)
         let notesHtml = '';
         if (group.notes && group.notes.trim() !== '') {
             notesHtml = `
@@ -523,22 +578,52 @@ function renderOrderHistory(orders, status) {
             `;
         }
 
-        // --- INI PERUBAHAN UTAMANYA ---
-        // Siapkan ID item untuk tombol batal
+        // --- LOGIKA TOMBOL UPLOAD & BATAL ---
         const itemIds = group.items.map(item => item.id);
-        
-        // Buat tombol Batal HANYA jika statusnya 'pending' atau 'mixed'
-        let cancelButtonHtml = '';
+        let actionButtonsHtml = '';
+
+        // Tombol hanya muncul jika status masih Pending atau Mixed
         if (group.status === 'pending' || group.status === 'mixed') {
-            // Gunakan JSON.stringify untuk melewatkan array ID ke fungsi onclick
-            cancelButtonHtml = `
-                <button class="history-cancel-btn" onclick='handleCancelOrderGroup(${JSON.stringify(itemIds)}, "${group.customer}")'>
-                    ❌ Batalkan Pesanan
-                </button>
+            
+            // Cek apakah sudah ada bukti pembayaran di salah satu item dalam grup ini
+            const existingProof = group.items.find(i => i.payment_proof_url)?.payment_proof_url;
+            
+            // Atur Label & Badge Status
+            let uploadLabel = existingProof ? '📷 Ganti Bukti' : '📷 Upload Bukti';
+            let proofStatus = existingProof 
+                ? '<div class="proof-badge" style="background:#d4edda; color:#155724; padding:4px 8px; border-radius:4px; font-size:0.8rem; margin-bottom:5px; display:inline-block;">Bukti Terkirim ✅</div>' 
+                : '<div class="proof-badge" style="background:#fff3cd; color:#856404; padding:4px 8px; border-radius:4px; font-size:0.8rem; margin-bottom:5px; display:inline-block;">Menunggu Pembayaran ⚠️</div>';
+
+            // Generate HTML Tombol (Upload & Cancel berdampingan)
+            // Note: Kita gunakan onchange pada input file untuk memicu upload otomatis setelah pilih file
+            actionButtonsHtml = `
+                <div class="history-actions" style="padding: 10px 15px; background-color: #f8f9fa; border-top: 1px solid #eee;">
+                    ${proofStatus}
+                    <div class="action-row" style="display: flex; gap: 10px;">
+                        <input type="file" id="file-input-${group.key}" 
+                               accept=".jpg, .jpeg, .png" 
+                               style="display: none;" 
+                               onchange='handleProofUpload(event, ${JSON.stringify(itemIds)})'>
+                        
+                        <button class="btn-upload" style="flex: 1; background-color: #3498db; color: white; border: none; padding: 10px; border-radius: 8px; cursor: pointer;" 
+                                onclick="document.getElementById('file-input-${group.key}').click()">
+                            ${uploadLabel}
+                        </button>
+
+                        <button class="history-cancel-btn" style="flex: 1; margin: 0; width: auto;" 
+                                onclick='handleCancelOrderGroup(${JSON.stringify(itemIds)}, "${group.customer}")'>
+                            ❌ Batal
+                        </button>
+                    </div>
+                    <div style="font-size: 0.7rem; color: #666; margin-top: 5px; text-align: center;">
+                        Max 1 file (JPG/PNG)
+                    </div>
+                </div>
             `;
         }
-        // --- AKHIR PERUBAHAN ---
-        
+        // --- AKHIR LOGIKA TOMBOL ---
+
+        // Gabungkan Semua HTML ke dalam Elemen Grup
         groupEl.innerHTML = `
             <div class="history-group-header">
                 <div class="history-date">${readableDate}</div>
@@ -552,7 +637,9 @@ function renderOrderHistory(orders, status) {
             <div class="history-total">
                 Total: ${formatRupiah(group.total_amount)}
             </div>
-            ${cancelButtonHtml} `;
+            ${actionButtonsHtml}
+        `;
+        
         historyListContainer.appendChild(groupEl);
     }
 }
@@ -694,10 +781,10 @@ document.addEventListener('DOMContentLoaded', function() {
         confirmBtn.addEventListener('click', processCheckout);
     }
     
-    const goBackBtn = document.getElementById('go-back-btn');
+    const goBackBtn = document.getElementById('go-pay-btn');
     if (goBackBtn) {
         goBackBtn.addEventListener('click', () => {
-            showPage('home-page');
+            showPage('history-page');
         });
     }
     
@@ -751,6 +838,8 @@ document.addEventListener('visibilitychange', function() {
         }
     }
 });
+
+
 
 // Global function for retry
 window.loadProducts = loadProducts;

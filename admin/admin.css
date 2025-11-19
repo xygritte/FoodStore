@@ -439,6 +439,21 @@ select {
     animation: spin 1s linear infinite;
 }
 
+/* === TAMBAHAN STYLE UNTUK LINK NAMA CUSTOMER === */
+.customer-link {
+    color: var(--info-color); /* Menggunakan warna biru/info */
+    font-weight: bold;
+    text-decoration: none;
+    cursor: pointer;
+    border-bottom: 1px dashed transparent;
+    transition: all 0.2s;
+}
+
+.customer-link:hover {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }

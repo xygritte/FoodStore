@@ -133,7 +133,54 @@ class SupabaseClient {
             return { success: false, error: error.message };
         }
     }
+    // ... method lainnya ...
+    
+    // === TAMBAHAN BARU UNTUK UPLOAD BUKTI ===
+    
+    // 1. Upload file ke Storage
+    async uploadProofImage(file) {
+        try {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+            const filePath = `${fileName}`;
+
+            const { data, error } = await supabase.storage
+                .from('payment-proofs')
+                .upload(filePath, file);
+
+            if (error) throw error;
+
+            // Dapatkan Public URL
+            const { data: publicUrlData } = supabase.storage
+                .from('payment-proofs')
+                .getPublicUrl(filePath);
+
+            return { success: true, url: publicUrlData.publicUrl };
+        } catch (error) {
+            console.error('Error uploading proof:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // 2. Update URL bukti pembayaran ke tabel sales (update massal berdasarkan ID)
+    async updateOrderProof(idList, proofUrl) {
+        try {
+            const { data, error } = await supabase
+                .from('sales')
+                .update({ payment_proof_url: proofUrl })
+                .in('id', idList)
+                .select();
+
+            if (error) throw error;
+            return { success: true, data };
+        } catch (error) {
+            console.error('Error updating order proof:', error);
+            return { success: false, error: error.message };
+        }
+    }
 }
+
+
 
 // Global instance
 const supabaseClient = new SupabaseClient();

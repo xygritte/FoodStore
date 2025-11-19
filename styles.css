@@ -721,6 +721,60 @@ body {
     max-width: 350px;
 }
 
+/* === TAMBAHAN UTILITY HISTORY === */
+.history-actions {
+    padding: 10px 15px;
+    background-color: #f8f9fa;
+    border-top: 1px solid #eee;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.action-row {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-upload {
+    flex: 1;
+    background-color: #3498db; /* Biru */
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    transition: 0.2s;
+}
+
+.btn-upload:hover {
+    background-color: #2980b9;
+}
+
+/* Modifikasi tombol cancel agar muat di sebelah tombol upload */
+.history-cancel-btn {
+    flex: 1;
+    margin: 0 !important; /* Override margin lama */
+    width: auto !important;
+}
+
+.proof-badge {
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: inline-block;
+    width: fit-content;
+}
+.proof-badge.pending {
+    background-color: #ffeaa7;
+    color: #d35400;
+}
+
 /* === RESPONSIVE ADJUSTMENTS === */
 @media (max-width: 480px) {
     .container {
