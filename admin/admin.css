@@ -396,9 +396,10 @@ select {
     text-transform: capitalize;
 }
 .status-pending { background-color: #f39c12; }
-.status-confirmed { background-color: var(--success-color); }
+.status-confirmed { background-color: blue }
 .status-cancelled { background-color: var(--danger-color); }
 .status-mixed { background-color: var(--info-color); }
+.status-completed { background-color: var(--success-color); }
 
 /* === STATUS & LOADING === */
 .status-bar {
