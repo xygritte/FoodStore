@@ -3,6 +3,9 @@ let cart = [];
 let products = [];
 let isProcessing = false;
 let currentCategory = 'all';
+// State Antrian
+let currentQueueNumber = null;
+let yourQueueNumber = parseInt(localStorage.getItem('lastQueueNumber')) || null; // Persist antrian terakhir
 
 // === ELEMENT SELECTOR ===
 const menuGrid = document.getElementById('menu-grid');
@@ -14,26 +17,31 @@ const searchInput = document.getElementById('search-input');
 const searchOrders = document.getElementById('search-orders');
 const cartBadge = document.getElementById('cart-badge');
 const notesInput = document.getElementById('notes');
-// === TAMBAHAN BARU (History) ===
 const historyListContainer = document.getElementById('history-list-container');
-
 
 // === FUNGSI HELPER ===
 function formatRupiah(value) {
     value = parseInt(value, 10);
-    if (isNaN(value)) value = 0; // Menangani jika value bukan angka
+    if (isNaN(value)) value = 0;
     return "Rp " + value.toLocaleString('id-ID');
 }
 
 function showLoading() {
-    // Implementasi loading jika diperlukan
     isProcessing = true;
-    // (Misal: document.getElementById('checkout-btn').disabled = true;)
+    const btn = document.getElementById('confirm-order-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Memproses...';
+    }
 }
 
 function hideLoading() {
     isProcessing = false;
-    // (Misal: document.getElementById('checkout-btn').disabled = false;)
+    const btn = document.getElementById('confirm-order-btn');
+    if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Konfirmasi';
+    }
 }
 
 function validateCustomerName(name) {
@@ -44,7 +52,7 @@ function validateCustomerName(name) {
             trimmedName !== "Pelanggan";
 }
 
-// === TAMBAHAN BARU (History - LocalStorage) ===
+// === HISTORY (LocalStorage) ===
 const LOCAL_STORAGE_KEY = 'warungBiEemOrderIds';
 
 function getOrderIdsFromLocalStorage() {
@@ -52,34 +60,29 @@ function getOrderIdsFromLocalStorage() {
         const idsJson = localStorage.getItem(LOCAL_STORAGE_KEY);
         if (idsJson) {
             const ids = JSON.parse(idsJson);
-            // Pastikan itu array angka
             return Array.isArray(ids) ? ids.map(Number).filter(id => !isNaN(id)) : [];
         }
         return [];
     } catch (e) {
-        console.error("Gagal parse ID pesanan dari localStorage", e);
+        console.error("Gagal parse ID pesanan", e);
         return [];
     }
 }
 
 function saveOrderIdsToLocalStorage(newOrderIds) {
     if (!newOrderIds || newOrderIds.length === 0) return;
-    
     try {
         const existingIds = getOrderIdsFromLocalStorage();
-        // Gunakan Set untuk menghindari duplikat, lalu ubah kembali ke array
         const combinedIds = [...new Set([...existingIds, ...newOrderIds])];
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(combinedIds));
     } catch (e) {
-        console.error("Gagal menyimpan ID pesanan ke localStorage", e);
+        console.error("Gagal menyimpan ID pesanan", e);
     }
 }
-// === AKHIR TAMBAHAN (History) ===
 
-
-// === FUNGSI RENDER ===
+// === FUNGSI RENDER PRODUK & CART ===
 function renderProducts() {
-    if (!menuGrid) return; // Penjagaan jika elemen tidak ada
+    if (!menuGrid) return;
     
     menuGrid.innerHTML = '';
     
@@ -94,7 +97,7 @@ function renderProducts() {
         return;
     }
     
-    // Filter produk berdasarkan kategori
+    // Filter produk
     let filteredProducts = products;
     if (currentCategory === 'food') {
         filteredProducts = products.filter(product => product.code.startsWith('MK'));
@@ -102,7 +105,6 @@ function renderProducts() {
         filteredProducts = products.filter(product => product.code.startsWith('MN'));
     }
     
-    // Filter produk berdasarkan pencarian
     const searchTerm = searchInput.value.toLowerCase();
     if (searchTerm) {
         filteredProducts = filteredProducts.filter(product => 
@@ -116,7 +118,6 @@ function renderProducts() {
             <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: #7f8c8d;">
                 <div style="font-size: 3em;">🔍</div>
                 <h3>Tidak ada hasil ditemukan</h3>
-                <p>Coba kata kunci lain atau lihat kategori berbeda.</p>
             </div>
         `;
         return;
@@ -127,7 +128,7 @@ function renderProducts() {
         card.className = 'menu-item';
         card.innerHTML = `
             <div class="menu-image">${product.code.startsWith('MK') ? '🍔' : '🥤'}</div>
-            <div class.info">
+            <div class="menu-info">
                 <div class="menu-name">${product.name}</div>
                 <div class="menu-desc">${product.code.startsWith('MK') ? 'Makanan' : 'Minuman'}</div>
                 <div class="menu-price">${formatRupiah(product.price)}</div>
@@ -147,7 +148,7 @@ function renderProducts() {
 }
 
 function renderCart() {
-    if (!cartItemsDiv) return; // Penjagaan
+    if (!cartItemsDiv) return;
     
     if (cart.length === 0) {
         cartItemsDiv.innerHTML = `
@@ -158,8 +159,6 @@ function renderCart() {
         `;
         totalAmountEl.textContent = 'Rp 0';
         totalPriceDisplay.textContent = 'Rp 0';
-        
-        // Update cart badge
         updateCartBadge(0);
         return;
     }
@@ -187,31 +186,18 @@ function renderCart() {
 
     totalAmountEl.textContent = formatRupiah(totalAmount);
     totalPriceDisplay.textContent = formatRupiah(totalAmount);
-    
-    // Update cart badge
     updateCartBadge(totalItems);
-    
-    // Update cart counter in tab title
-    document.title = totalItems > 0 ? `(${totalItems}) Warung Bi Eem` : 'Warung Bi Eem';
 }
 
 function updateCartBadge(totalItems) {
     if (cartBadge) {
         cartBadge.textContent = totalItems;
-        if (totalItems === 0) {
-            cartBadge.style.display = 'none';
-        } else {
-            cartBadge.style.display = 'flex';
-        }
+        cartBadge.style.display = totalItems === 0 ? 'none' : 'flex';
     }
 }
 
-// === FUNGSI LOGIKA (CART) ===
 function addToCart(product) {
-    if (!product) {
-        console.error('Product tidak ditemukan');
-        return;
-    }
+    if (!product) return;
     
     const existingItem = cart.find(item => item.code === product.code);
     
@@ -232,83 +218,45 @@ function addToCart(product) {
     showNotification(`✅ ${product.name} ditambahkan ke keranjang`);
 }
 
-function clearCart() {
-    if (cart.length === 0) {
-        showNotification("Keranjang sudah kosong!");
-        return;
-    }
-    
-    if (confirm("Apakah Anda yakin ingin mengosongkan keranjang?")) {
-        cart = [];
-        renderCart();
-        showNotification("Keranjang berhasil dikosongkan");
-    }
-}
-
 function showNotification(message) {
-    // Remove existing notifications
     const existingNotifications = document.querySelectorAll('.notification');
     existingNotifications.forEach(notif => notif.remove());
     
-    // Create notification element
     const notification = document.createElement('div');
     notification.className = 'notification';
     notification.textContent = message;
     document.body.appendChild(notification);
     
-    // Animate in
     setTimeout(() => notification.style.transform = 'translateX(0)', 100);
-    
-    // Remove after 3 seconds
     setTimeout(() => {
         notification.style.transform = 'translateX(100%)';
-        setTimeout(() => {
-            if (document.body.contains(notification)) {
-                document.body.removeChild(notification);
-            }
-        }, 300);
+        setTimeout(() => notification.remove(), 300);
     }, 3000);
 }
 
-// === FUNGSI API (SUPABASE) ===
+// === FUNGSI API (Supabase) ===
 async function loadProducts() {
     try {
-        console.log('Memuat produk dari Supabase...');
         const result = await supabaseClient.getProducts();
-        
         if (result.success) {
             products = result.products;
             renderProducts();
-            console.log(`Berhasil memuat ${products.length} produk`);
         } else {
-            throw new Error(result.error || 'Gagal memuat produk');
+            throw new Error(result.error);
         }
     } catch (error) {
         console.error('Error memuat produk:', error);
         showNotification('❌ Gagal memuat menu. Silakan refresh halaman.');
-        
-        if (menuGrid) {
-            menuGrid.innerHTML = `
-                <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: #e74c3c;">
-                    <div style="font-size: 3em;">⚠️</div>
-                    <h3>Gagal memuat menu</h3>
-                    <p>${error.message}</p>
-                    <button onclick="loadProducts()" style="background: var(--primary-color); color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-top: 10px;">
-                        🔄 Coba Lagi
-                    </button>
-                </div>
-            `;
-        }
     }
 }
 
+// === CHECKOUT LOGIC (MODIFIED FOR QUEUE) ===
 async function processCheckout() {
     if (isProcessing) return;
     
     const customerName = customerNameInput.value.trim();
     const notes = notesInput.value.trim();
 
-    // VALIDASI
     if (!customerName || !validateCustomerName(customerName)) {
         showNotification("❌ Harap masukkan nama pemesan yang valid!");
         customerNameInput.focus();
@@ -326,9 +274,19 @@ async function processCheckout() {
     try {
         const saleTime = new Date().toISOString();
         const insertedOrders = [];
-        const insertedOrderIds = []; // <-- TAMBAHAN BARU (History)
+        const insertedOrderIds = [];
 
-        // Insert each cart item as separate order
+        // 1. DAPATKAN NOMOR ANTRIAN BARU
+        // (Pastikan fungsi getNextQueueNumber ada di supabase-client.js nanti)
+        const queueResult = await supabaseClient.getNextQueueNumber();
+        if (!queueResult.success) {
+            throw new Error("Gagal mendapatkan nomor antrian: " + queueResult.error);
+        }
+        
+        yourQueueNumber = queueResult.queue_number;
+        localStorage.setItem('lastQueueNumber', yourQueueNumber); // Simpan agar tahan refresh
+
+        // 2. INSERT ITEMS DENGAN NOMOR ANTRIAN
         for (const item of cart) {
             const orderData = {
                 sale_date: saleTime,
@@ -339,35 +297,40 @@ async function processCheckout() {
                 total: item.total,
                 customer_name: customerName,
                 notes: notes,
-                status: 'pending'
+                status: 'pending',
+                queue_number: yourQueueNumber // <--- TAMBAHAN PENTING
             };
             
             const result = await supabaseClient.createOrder(orderData);
             
             if (result.success) {
                 insertedOrders.push(result.data.id);
-                insertedOrderIds.push(result.data.id); // <-- TAMBAHAN BARU (History)
+                insertedOrderIds.push(result.data.id);
             } else {
                 throw new Error(`Gagal menyimpan pesanan untuk ${item.name}: ${result.error}`);
             }
         }
         
-        // --- TAMBAHAN BARU (History) ---
-        // Simpan ID pesanan baru ke localStorage
         saveOrderIdsToLocalStorage(insertedOrderIds);
-        // --- AKHIR TAMBAHAN ---
         
-        // Success
+        // 3. SUKSES
         cart = [];
         renderCart();
         customerNameInput.value = '';
         notesInput.value = '';
         customerNameInput.classList.remove('input-error');
         
-        showNotification(`✅ PESANAN BERHASIL! ${insertedOrders.length} item diproses.`);
+        // Update UI Success Page dengan nomor antrian
+        const queueNumberDisplay = document.getElementById('queue-number');
+        if (queueNumberDisplay) {
+            queueNumberDisplay.textContent = yourQueueNumber;
+        }
+        
+        showNotification(`✅ Order Berhasil! Antrian No: ${yourQueueNumber}`);
         showPage('success-page');
         
-        console.log('Checkout berhasil:', insertedOrders);
+        // Refresh display antrian jika ada di background
+        updateQueueDisplay();
         
     } catch (error) {
         console.error('Error checkout:', error);
@@ -377,15 +340,10 @@ async function processCheckout() {
     }
 }
 
-
-// ======================================================
-// === FUNGSI LOGIKA (HISTORY) - TAMBAHAN BARU ===
-// ======================================================
-
+// === FUNGSI HISTORY ===
 async function loadOrderHistory() {
     if (!historyListContainer) return;
     
-    // Tampilkan loading spinner
     historyListContainer.innerHTML = `
         <div class="loading" style="display: block; padding-top: 20px;">
             <div class="spinner"></div>
@@ -396,354 +354,326 @@ async function loadOrderHistory() {
     const orderIds = getOrderIdsFromLocalStorage();
     
     if (orderIds.length === 0) {
-        renderOrderHistory([], 'empty');
+        historyListContainer.innerHTML = `
+            <div class="empty-history">
+                <div class="empty-history-icon">📜</div>
+                <p>Belum ada riwayat pesanan.</p>
+            </div>`;
         return;
     }
     
     try {
         const result = await supabaseClient.getOrdersByIds(orderIds);
         if (result.success) {
-            renderOrderHistory(result.orders, 'success');
+            renderOrderHistory(result.orders);
         } else {
             throw new Error(result.error);
         }
     } catch (error) {
         console.error('Gagal memuat riwayat:', error);
-        renderOrderHistory([], 'error');
+        historyListContainer.innerHTML = `<p style="text-align:center; color:red;">Gagal memuat riwayat.</p>`;
     }
 }
 
+// Upload Bukti (Integrasi History)
 async function handleProofUpload(event, itemIds) {
     const file = event.target.files[0];
     if (!file) return;
 
-    // Validasi Tipe File
     if (!['image/jpeg', 'image/jpg', 'image/png'].includes(file.type)) {
-        alert('Hanya file JPG atau PNG yang diperbolehkan!');
+        alert('Hanya file JPG/PNG!');
         return;
     }
 
-    // Validasi Ukuran (Misal max 2MB)
-    if (file.size > 2 * 1024 * 1024) {
-        alert('Ukuran file terlalu besar! Maksimal 2MB.');
+    if (!confirm("Upload screenshot bukti pembayaran?")) {
+        event.target.value = '';
         return;
     }
 
-    const confirmUpload = confirm("Upload screenshot bukti pembayaran ini?");
-    if (!confirmUpload) {
-        event.target.value = ''; // Reset input
-        return;
-    }
-
-    showNotification("⏳ Mengupload bukti pembayaran...");
+    showNotification("⏳ Mengupload bukti...");
     
     try {
-        // 1. Upload File
         const uploadResult = await supabaseClient.uploadProofImage(file);
         if (!uploadResult.success) throw new Error(uploadResult.error);
 
-        // 2. Update Database
         const updateResult = await supabaseClient.updateOrderProof(itemIds, uploadResult.url);
         if (!updateResult.success) throw new Error(updateResult.error);
 
-        showNotification("✅ Bukti pembayaran berhasil diupload!");
-        
-        // 3. Refresh Riwayat
+        showNotification("✅ Bukti berhasil diupload!");
         loadOrderHistory();
 
     } catch (error) {
-        console.error("Upload gagal:", error);
         showNotification(`❌ Upload gagal: ${error.message}`);
     }
 }
-
-// Expose ke window
 window.handleProofUpload = handleProofUpload;
 
-function renderOrderHistory(orders, status) {
-    // 1. Cek Status Error atau Kosong
-    if (status === 'empty') {
-        historyListContainer.innerHTML = `
-            <div class="empty-history">
-                <div class="empty-history-icon">📜</div>
-                <p>Anda belum memiliki riwayat pesanan di perangkat ini.</p>
-            </div>
-        `;
-        return;
-    }
-    
-    if (status === 'error') {
-        historyListContainer.innerHTML = `
-            <div class="empty-history" style="color: #e74c3c;">
-                <div class="empty-history-icon">⚠️</div>
-                <p>Gagal memuat riwayat pesanan Anda.</p>
-                <button class="history-refresh-btn" style="background-color: #e74c3c; margin-top: 15px;" onclick="loadOrderHistory()">Coba Lagi</button>
-            </div>
-        `;
-        return;
-    }
-    
-    // 2. Pengelompokan Pesanan (Grouping)
-    const groupedOrders = {};
-    for (const order of orders) {
-        // Gunakan kombinasi nama dan tanggal sebagai kunci unik grup pesanan
-        const groupKey = `${order.customer_name}_${order.sale_date}`;
-        
-        if (!groupedOrders[groupKey]) {
-            groupedOrders[groupKey] = {
-                key: groupKey, // Simpan key untuk ID unik elemen
-                customer: order.customer_name,
-                datetime: order.sale_date,
-                notes: order.notes,
-                items: [],
-                total_amount: 0,
-                status: 'mixed'
-            };
-        }
-        
-        groupedOrders[groupKey].items.push(order);
-        groupedOrders[groupKey].total_amount += order.total;
-    }
-    
-    // 3. Tentukan Status Grup dan Urutkan (Terbaru paling atas)
-    const sortedGroups = Object.values(groupedOrders).map(group => {
-        const statuses = new Set(group.items.map(item => item.status));
-        
-        if (statuses.size === 1) {
-            group.status = statuses.values().next().value; // Semua item statusnya sama
-        } else if (statuses.has('pending')) {
-            group.status = 'mixed'; // Ada yang pending, ada yang lain
-        } else if (statuses.has('confirmed')) {
-            group.status = 'confirmed';
-        } else {
-            group.status = 'cancelled';
-        }
-        return group;
-    }).sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
-
-    // 4. Bersihkan Container & Tambah Tombol Refresh
-    historyListContainer.innerHTML = '';
-    
-    const refreshBtn = document.createElement('button');
-    refreshBtn.className = 'history-refresh-btn';
-    refreshBtn.innerHTML = '🔄 Refresh Status Pesanan';
-    refreshBtn.onclick = loadOrderHistory;
-    historyListContainer.appendChild(refreshBtn);
-    
-    if (sortedGroups.length === 0) {
-         historyListContainer.innerHTML += `
-            <div class="empty-history">
-                <div class="empty-history-icon">📜</div>
-                <p>Riwayat pesanan tidak ditemukan.</p>
-            </div>
-        `;
-        return;
-    }
-
-    // 5. Render Setiap Grup Pesanan
-    for (const group of sortedGroups) {
-        const groupEl = document.createElement('div');
-        groupEl.className = 'history-group';
-        
-        // Generate HTML untuk Item Pesanan
-        let itemsHtml = '';
-        for (const item of group.items) {
-            itemsHtml += `
-                <div class="history-item">
-                    <div class="history-item-info">
-                        <div class="history-item-name">${item.product_name}</div>
-                        <div class="history-item-details">
-                            ${item.quantity} x ${formatRupiah(item.price)}
-                        </div>
-                    </div>
-                    <span class="history-item-total" style="font-weight: normal; color: #333;">${formatRupiah(item.total)}</span>
-                </div>
-            `;
-        }
-
-        // Format Tanggal
-        const readableDate = new Date(group.datetime).toLocaleString('id-ID', {
-            day: '2-digit', month: 'long', year: 'numeric',
-            hour: '2-digit', minute: '2-digit'
-        });
-
-        // HTML untuk Catatan (jika ada)
-        let notesHtml = '';
-        if (group.notes && group.notes.trim() !== '') {
-            notesHtml = `
-                <div class="history-notes">
-                    <strong>Catatan:</strong>
-                    <pre class="history-notes-text">${group.notes}</pre>
-                </div>
-            `;
-        }
-
-        // --- LOGIKA TOMBOL UPLOAD & BATAL ---
-        const itemIds = group.items.map(item => item.id);
-        let actionButtonsHtml = '';
-
-        // Tombol hanya muncul jika status masih Pending atau Mixed
-        if (group.status === 'pending' || group.status === 'mixed') {
-            
-            // Cek apakah sudah ada bukti pembayaran di salah satu item dalam grup ini
-            const existingProof = group.items.find(i => i.payment_proof_url)?.payment_proof_url;
-            
-            // Atur Label & Badge Status
-            let uploadLabel = existingProof ? '📷 Ganti Bukti' : '📷 Upload Bukti';
-            let proofStatus = existingProof 
-                ? '<div class="proof-badge" style="background:#d4edda; color:#155724; padding:4px 8px; border-radius:4px; font-size:0.8rem; margin-bottom:5px; display:inline-block;">Bukti Terkirim ✅</div>' 
-                : '<div class="proof-badge" style="background:#fff3cd; color:#856404; padding:4px 8px; border-radius:4px; font-size:0.8rem; margin-bottom:5px; display:inline-block;">Menunggu Pembayaran ⚠️</div>';
-
-            // Generate HTML Tombol (Upload & Cancel berdampingan)
-            // Note: Kita gunakan onchange pada input file untuk memicu upload otomatis setelah pilih file
-            actionButtonsHtml = `
-                <div class="history-actions" style="padding: 10px 15px; background-color: #f8f9fa; border-top: 1px solid #eee;">
-                    ${proofStatus}
-                    <div class="action-row" style="display: flex; gap: 10px;">
-                        <input type="file" id="file-input-${group.key}" 
-                               accept=".jpg, .jpeg, .png" 
-                               style="display: none;" 
-                               onchange='handleProofUpload(event, ${JSON.stringify(itemIds)})'>
-                        
-                        <button class="btn-upload" style="flex: 1; background-color: #3498db; color: white; border: none; padding: 10px; border-radius: 8px; cursor: pointer;" 
-                                onclick="document.getElementById('file-input-${group.key}').click()">
-                            ${uploadLabel}
-                        </button>
-
-                        <button class="history-cancel-btn" style="flex: 1; margin: 0; width: auto;" 
-                                onclick='handleCancelOrderGroup(${JSON.stringify(itemIds)}, "${group.customer}")'>
-                            ❌ Batal
-                        </button>
-                    </div>
-                    <div style="font-size: 0.7rem; color: #666; margin-top: 5px; text-align: center;">
-                        Max 1 file (JPG/PNG)
-                    </div>
-                </div>
-            `;
-        }
-        // --- AKHIR LOGIKA TOMBOL ---
-
-        // Gabungkan Semua HTML ke dalam Elemen Grup
-        groupEl.innerHTML = `
-            <div class="history-group-header">
-                <div class="history-date">${readableDate}</div>
-                <div class="history-customer">${group.customer}</div>
-                <div class="history-status status-${group.status}">${group.status}</div>
-            </div>
-            <div class="history-items-list">
-                ${itemsHtml}
-            </div>
-            ${notesHtml}
-            <div class="history-total">
-                Total: ${formatRupiah(group.total_amount)}
-            </div>
-            ${actionButtonsHtml}
-        `;
-        
-        historyListContainer.appendChild(groupEl);
-    }
-}
-// === AKHIR FUNGSI (History) ===
-
-// --- TAMBAHKAN FUNGSI BARU DI BAWAH INI ---
+// Cancel Order (Integrasi History)
 async function handleCancelOrderGroup(itemIds, customerName) {
-    if (isProcessing) return; // Mencegah klik ganda
-
-    // Konfirmasi dari user
-    const confirmation = confirm(`Anda yakin ingin membatalkan pesanan untuk ${customerName}? (${itemIds.length} item)`);
-    if (!confirmation) {
-        return;
-    }
+    if (isProcessing) return;
+    
+    if (!confirm(`Batalkan pesanan untuk ${customerName}?`)) return;
 
     isProcessing = true;
-    showNotification("Sedang membatalkan pesanan...");
+    showNotification("Membatalkan pesanan...");
 
     try {
-        // Panggil fungsi baru di supabaseClient
         const result = await supabaseClient.updateOrderStatusByIds(itemIds, 'cancelled');
-
         if (result.success) {
-            showNotification(`✅ Pesanan untuk ${customerName} berhasil dibatalkan.`);
-            // Muat ulang riwayat untuk menampilkan status "cancelled"
+            showNotification("✅ Pesanan dibatalkan.");
             loadOrderHistory();
         } else {
             throw new Error(result.error);
         }
     } catch (error) {
-        console.error('Gagal membatalkan pesanan:', error);
-        showNotification(`❌ Gagal membatalkan pesanan: ${error.message}`);
+        showNotification(`❌ Gagal batal: ${error.message}`);
     } finally {
         isProcessing = false;
     }
 }
-// --- AKHIR FUNGSI BARU ---
+window.handleCancelOrderGroup = handleCancelOrderGroup;
 
-
-
-
-
-// === FUNGSI NAVIGASI ===
-function showPage(pageId) {
-    // Hide all pages
-    const pages = document.querySelectorAll('.page');
-    pages.forEach(page => page.classList.remove('active'));
+function renderOrderHistory(orders) {
+    // Grouping logic
+    const groupedOrders = {};
+    for (const order of orders) {
+        const groupKey = `${order.customer_name}_${order.sale_date}`;
+        if (!groupedOrders[groupKey]) {
+            groupedOrders[groupKey] = {
+                key: groupKey,
+                customer: order.customer_name,
+                datetime: order.sale_date,
+                notes: order.notes,
+                items: [],
+                total_amount: 0,
+                status: 'mixed',
+                // Tambahkan queue_number ke grouping display jika ada
+                queue_number: order.queue_number
+            };
+        }
+        groupedOrders[groupKey].items.push(order);
+        groupedOrders[groupKey].total_amount += order.total;
+    }
     
-    // Show selected page
-    // --- MODIFIKASI DIMULAI ---
-    const pageToShow = document.getElementById(pageId);
-    if (pageToShow) {
-        pageToShow.classList.add('active');
+    // Sorting & Status Logic
+    const sortedGroups = Object.values(groupedOrders).map(group => {
+        const statuses = new Set(group.items.map(item => item.status));
+        if (statuses.size === 1) group.status = statuses.values().next().value;
+        else if (statuses.has('pending')) group.status = 'mixed';
+        else if (statuses.has('confirmed')) group.status = 'confirmed';
+        else group.status = 'cancelled';
+        return group;
+    }).sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
+
+    historyListContainer.innerHTML = '';
+    
+    // Refresh Button
+    const refreshBtn = document.createElement('button');
+    refreshBtn.className = 'history-refresh-btn';
+    refreshBtn.innerHTML = '🔄 Refresh Status';
+    refreshBtn.onclick = loadOrderHistory;
+    historyListContainer.appendChild(refreshBtn);
+
+    if (sortedGroups.length === 0) {
+        historyListContainer.innerHTML += `<p style="text-align:center;">Riwayat kosong.</p>`;
+        return;
     }
 
-    // Muat riwayat jika menavigasi ke halaman riwayat
-    if (pageId === 'history-page') {
-        loadOrderHistory();
-    }
-    // --- MODIFIKASI SELESAI ---
-    
-    // Update navigation
-    const navItems = document.querySelectorAll('.nav-item');
-    navItems.forEach(item => item.classList.remove('active'));
-    
-    // Find and activate corresponding nav item
-    const activeNavItem = document.querySelector(`[data-page="${pageId}"]`);
-    if (activeNavItem) {
-        activeNavItem.classList.add('active');
+    for (const group of sortedGroups) {
+        const groupEl = document.createElement('div');
+        groupEl.className = 'history-group';
+        
+        let itemsHtml = group.items.map(item => `
+            <div class="history-item">
+                <div class="history-item-info">
+                    <div class="history-item-name">${item.product_name}</div>
+                    <div class="history-item-details">${item.quantity} x ${formatRupiah(item.price)}</div>
+                </div>
+                <span class="history-item-total">${formatRupiah(item.total)}</span>
+            </div>
+        `).join('');
+
+        const readableDate = new Date(group.datetime).toLocaleString('id-ID', {
+            day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+        });
+
+        // Tampilkan Nomor Antrian di Header History jika ada
+        const queueBadge = group.queue_number 
+            ? `<span style="background:var(--primary-color); color:white; padding:2px 6px; border-radius:4px; font-size:0.8em; margin-left:5px;">Antrian #${group.queue_number}</span>` 
+            : '';
+
+        let actionButtonsHtml = '';
+        if (group.status === 'pending' || group.status === 'mixed') {
+            const itemIds = group.items.map(item => item.id);
+            const existingProof = group.items.find(i => i.payment_proof_url)?.payment_proof_url;
+            let uploadLabel = existingProof ? '📷 Ganti Bukti' : '📷 Upload Bukti';
+            let proofStatus = existingProof 
+                ? '<div class="proof-badge" style="background:#d4edda; color:#155724;">Bukti Terkirim ✅</div>' 
+                : '<div class="proof-badge pending">Menunggu Pembayaran ⚠️</div>';
+
+            actionButtonsHtml = `
+                <div class="history-actions">
+                    ${proofStatus}
+                    <div class="action-row">
+                        <input type="file" id="file-${group.key}" accept="image/*" style="display:none;" 
+                               onchange='handleProofUpload(event, ${JSON.stringify(itemIds)})'>
+                        <button class="btn-upload" onclick="document.getElementById('file-${group.key}').click()">
+                            ${uploadLabel}
+                        </button>
+                        <button class="history-cancel-btn" onclick='handleCancelOrderGroup(${JSON.stringify(itemIds)}, "${group.customer}")'>
+                            ❌ Batal
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        groupEl.innerHTML = `
+            <div class="history-group-header">
+                <div class="history-date">${readableDate}</div>
+                <div class="history-customer">${group.customer} ${queueBadge}</div>
+                <div class="history-status status-${group.status}">${group.status}</div>
+            </div>
+            <div class="history-items-list">${itemsHtml}</div>
+            <div class="history-total">Total: ${formatRupiah(group.total_amount)}</div>
+            ${actionButtonsHtml}
+        `;
+        historyListContainer.appendChild(groupEl);
     }
 }
 
-function setupNavigation() {
-    // Navigation between pages
-    const navItems = document.querySelectorAll('.nav-item');
+// === FUNGSI ANTRIAN (QUEUE LOGIC) - BARU ===
+async function updateQueueDisplay() {
+    try {
+        const result = await supabaseClient.getQueueStatus();
+        
+        if (result.success) {
+            const queueData = result.data;
+            
+            // Update Antrian Saat Ini
+            const currentQueueEl = document.getElementById('current-queue-number');
+            if (currentQueueEl) {
+                // Jika 0 atau null, tampilkan '-'
+                currentQueueEl.textContent = queueData.current_queue ? queueData.current_queue : '-';
+            }
+            
+            // Update Antrian Anda (dari LocalStorage atau Checkout barusan)
+            const yourQueueEl = document.getElementById('your-queue-number');
+            if (yourQueueEl && yourQueueNumber) {
+                yourQueueEl.textContent = yourQueueNumber;
+                
+                // Estimasi Waktu
+                const estimationEl = document.getElementById('queue-estimation');
+                if (estimationEl && queueData.current_queue) {
+                    const current = queueData.current_queue;
+                    const yours = yourQueueNumber;
+                    
+                    if (yours === current) {
+                        estimationEl.textContent = 'Giliran Anda! Silakan ke kasir/menunggu dipanggil.';
+                        estimationEl.style.color = 'var(--primary-color)';
+                        estimationEl.style.fontWeight = 'bold';
+                    } else if (yours > current) {
+                        const diff = yours - current;
+                        const estimatedTime = diff * 5; // Asumsi 5 menit per antrian
+                        estimationEl.textContent = `Menunggu ${diff} antrian lagi (±${estimatedTime} menit)`;
+                        estimationEl.style.color = 'var(--text-light)';
+                    } else {
+                        estimationEl.textContent = 'Antrian Anda sudah lewat.';
+                        estimationEl.style.color = '#7f8c8d';
+                    }
+                } else {
+                    if (estimationEl) estimationEl.textContent = 'Menunggu antrian dimulai...';
+                }
+            } else if (yourQueueEl) {
+                yourQueueEl.textContent = '-';
+            }
+            
+            // Render List Antrian
+            renderQueueList(queueData.queue_list || []);
+        }
+    } catch (error) {
+        console.error('Error updating queue:', error);
+    }
+}
+
+function renderQueueList(queueList) {
+    const queueListEl = document.getElementById('queue-list');
+    if (!queueListEl) return;
     
+    // Filter antrian yang statusnya pending atau processing saja untuk tampilan customer
+    // dan urutkan
+    const activeQueues = queueList.filter(q => 
+        q.status === 'pending' || q.status === 'processing'
+    ).sort((a, b) => a.queue_number - b.queue_number);
+
+    if (activeQueues.length === 0) {
+        queueListEl.innerHTML = '<div class="empty-queue">Tidak ada antrian yang menunggu.</div>';
+        return;
+    }
+    
+    // Ambil nomor antrian current dari DOM jika ada, untuk highlight
+    const currentQText = document.getElementById('current-queue-number')?.textContent;
+    const currentQ = parseInt(currentQText) || 0;
+
+    queueListEl.innerHTML = activeQueues.map(queue => {
+        const isCurrent = queue.queue_number === currentQ;
+        const isYours = queue.queue_number === yourQueueNumber;
+        
+        let statusClass = 'pending';
+        if (queue.status === 'processing') statusClass = 'processing';
+        
+        return `
+        <div class="queue-item ${isCurrent ? 'current' : ''} ${isYours ? 'yours' : ''}">
+            <span class="queue-item-number">#${queue.queue_number}</span>
+            <span class="queue-item-customer">${queue.customer_name}</span>
+            <span class="queue-item-status status-${statusClass}">${queue.status}</span>
+        </div>
+        `;
+    }).join('');
+}
+
+// === NAVIGASI ===
+function showPage(pageId) {
+    const pages = document.querySelectorAll('.page');
+    pages.forEach(page => page.classList.remove('active'));
+    
+    const pageToShow = document.getElementById(pageId);
+    if (pageToShow) pageToShow.classList.add('active');
+
+    // Trigger loads based on page
+    if (pageId === 'history-page') loadOrderHistory();
+    if (pageId === 'queue-page') updateQueueDisplay();
+    
+    // Update nav icons
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(item => item.classList.remove('active'));
+    const activeNavItem = document.querySelector(`[data-page="${pageId}"]`);
+    if (activeNavItem) activeNavItem.classList.add('active');
+}
+
+function setupNavigation() {
+    const navItems = document.querySelectorAll('.nav-item');
     navItems.forEach(item => {
         item.addEventListener('click', function(e) {
             e.preventDefault();
             const pageId = this.getAttribute('data-page');
-            if (pageId) {
-                showPage(pageId);
-            }
+            if (pageId) showPage(pageId);
         });
     });
 }
 
 function setupCategoryFilter() {
     const categoryBtns = document.querySelectorAll('.category-btn');
-    
     categoryBtns.forEach(btn => {
         btn.addEventListener('click', function() {
-            // Update active category button
             categoryBtns.forEach(b => b.classList.remove('active'));
             this.classList.add('active');
             
-            // Update current category and re-render products
             currentCategory = this.getAttribute('data-category');
             
-            // If clicking on orders category, go to orders page
             if (currentCategory === 'confirmation') {
                 showPage('orders-page');
             } else {
-                // Otherwise, stay on home page and filter products
                 if (!document.getElementById('home-page').classList.contains('active')) {
                     showPage('home-page');
                 }
@@ -753,96 +683,59 @@ function setupCategoryFilter() {
     });
 }
 
-// === EVENT LISTENERS ===
+// === INITIALIZATION ===
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Aplikasi dimulai...');
+    console.log('App Started');
     
-    // Splash screen timeout
+    // Splash
     setTimeout(function() {
         const splash = document.getElementById('splash-screen');
         if (splash) {
             splash.style.opacity = '0';
-            setTimeout(function() {
-                splash.style.display = 'none';
-            }, 500);
+            setTimeout(() => splash.style.display = 'none', 500);
         }
-    }, 2500);
+    }, 2000);
     
-    // Setup navigation
     setupNavigation();
     setupCategoryFilter();
+    loadProducts(); // Load Menu awal
     
-    // Load data
-    loadProducts();
-    
-    
+    // Event Listeners
     const confirmBtn = document.getElementById('confirm-order-btn');
-    if (confirmBtn) {
-        confirmBtn.addEventListener('click', processCheckout);
-    }
+    if (confirmBtn) confirmBtn.addEventListener('click', processCheckout);
     
-    const goBackBtn = document.getElementById('go-pay-btn');
-    if (goBackBtn) {
-        goBackBtn.addEventListener('click', () => {
-            showPage('history-page');
+    const goPayBtn = document.getElementById('go-pay-btn');
+    if (goPayBtn) {
+        goPayBtn.addEventListener('click', () => {
+            showPage('queue-page'); // Arahkan ke halaman antrian setelah sukses
         });
     }
-    
-    // Search functionality
-    if (searchInput) {
-        searchInput.addEventListener('input', renderProducts);
-    }
-    if (searchOrders) {
-        // Seharusnya ini memfilter keranjang, bukan produk. 
-        // Untuk saat ini, saya biarkan sesuai kode asli Anda (memfilter produk).
-        searchOrders.addEventListener('input', renderProducts); 
-    }
-    
-    // Enter key in customer name
-    if (customerNameInput) {
-        customerNameInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                processCheckout();
-            }
-        });
 
-        // Validasi real-time pada input customer name
-        customerNameInput.addEventListener('input', function() {
-            const value = this.value.trim();
-            if (validateCustomerName(value)) {
-                this.classList.remove('input-error');
-            } else {
-                // Jangan tambahkan error jika masih kosong,
-                // hanya jika sudah diisi tapi tidak valid
-                if (value.length > 0) {
-                     this.classList.add('input-error');
-                } else {
-                     this.classList.remove('input-error');
-                }
-            }
+    const refreshQueueBtn = document.getElementById('refresh-queue-btn');
+    if (refreshQueueBtn) {
+        refreshQueueBtn.addEventListener('click', () => {
+            updateQueueDisplay();
+            showNotification('🔄 Status antrian diperbarui');
         });
     }
     
-    console.log('Aplikasi siap digunakan');
-});
-
-// Handle page visibility change
-document.addEventListener('visibilitychange', function() {
-    if (!document.hidden) {
-        // Refresh produk saat tab aktif kembali
-        loadProducts();
-        
-        // Refresh juga riwayat jika sedang di halaman riwayat
-        if (document.getElementById('history-page')?.classList.contains('active')) {
-            loadOrderHistory();
+    if (searchInput) searchInput.addEventListener('input', renderProducts);
+    if (searchOrders) searchOrders.addEventListener('input', renderProducts);
+    
+    // Load queue data awal jika ada lastQueueNumber
+    if (yourQueueNumber) {
+        console.log("Welcome back queue #" + yourQueueNumber);
+    }
+    
+    // Auto-refresh queue setiap 10 detik jika di halaman queue
+    setInterval(() => {
+        const queuePage = document.getElementById('queue-page');
+        if (queuePage && queuePage.classList.contains('active')) {
+            updateQueueDisplay();
         }
-    }
+    }, 10000);
 });
 
-
-
-// Global function for retry
+// Window exposure
 window.loadProducts = loadProducts;
 window.addToCart = addToCart;
-window.loadOrderHistory = loadOrderHistory;
-window.handleCancelOrderGroup = handleCancelOrderGroup; // <-- TAMBAHKAN INI

@@ -1,7 +1,7 @@
 // Supabase Configuration
 const SUPABASE_CONFIG = {
-    url: 'https://whngeaxjrrfgbldnelpq.supabase.co', // GANTI
-    key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndobmdlYXhqcnJmZ2JsZG5lbHBxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMxMDMyODIsImV4cCI6MjA3ODY3OTI4Mn0.40PLSwX4X2BxRCy-LXOubqbZR3gvB5JqFOyHUV5TS9s' // GANTI
+    url: 'https://whngeaxjrrfgbldnelpq.supabase.co', 
+    key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndobmdlYXhqcnJmZ2JsZG5lbHBxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMxMDMyODIsImV4cCI6MjA3ODY3OTI4Mn0.40PLSwX4X2BxRCy-LXOubqbZR3gvB5JqFOyHUV5TS9s' 
 };
 
 // Supabase client
@@ -76,7 +76,7 @@ class SupabaseClient {
             const { data, error } = await supabase
                 .from('sales')
                 .select('*')
-                .in('id', idList) // <-- Filter penting
+                .in('id', idList) 
                 .order('sale_date', { ascending: false });
             
             if (error) throw error;
@@ -115,15 +115,10 @@ class SupabaseClient {
         }
         try {
             const updates = { status };
-            // Anda bisa tambahkan 'cancelled_at' jika tabel Anda mendukung
-            // if (status === 'cancelled') {
-            //     updates.cancelled_at = new Date().toISOString();
-            // }
-
             const { data, error } = await supabase
                 .from('sales')
                 .update(updates)
-                .in('id', idList) // <-- Menggunakan .in() untuk update massal
+                .in('id', idList)
                 .select();
             
             if (error) throw error;
@@ -133,10 +128,7 @@ class SupabaseClient {
             return { success: false, error: error.message };
         }
     }
-    // ... method lainnya ...
-    
-    // === TAMBAHAN BARU UNTUK UPLOAD BUKTI ===
-    
+
     // 1. Upload file ke Storage
     async uploadProofImage(file) {
         try {
@@ -162,7 +154,7 @@ class SupabaseClient {
         }
     }
 
-    // 2. Update URL bukti pembayaran ke tabel sales (update massal berdasarkan ID)
+    // 2. Update URL bukti pembayaran ke tabel sales
     async updateOrderProof(idList, proofUrl) {
         try {
             const { data, error } = await supabase
@@ -178,9 +170,139 @@ class SupabaseClient {
             return { success: false, error: error.message };
         }
     }
+
+    // === FITUR ANTRIAN BARU ===
+
+    // 3. Get Next Queue Number
+    async getNextQueueNumber() {
+        try {
+            // Cari nomor antrian tertinggi yang pernah ada
+            // Note: Idealnya direset harian, tapi untuk MVP kita ambil max global + 1
+            const { data, error } = await supabase
+                .from('sales')
+                .select('queue_number')
+                .not('queue_number', 'is', null) // Filter yang tidak null
+                .order('queue_number', { ascending: false })
+                .limit(1);
+            
+            if (error) throw error;
+            
+            let nextQueue = 1;
+            if (data && data.length > 0 && data[0].queue_number) {
+                nextQueue = data[0].queue_number + 1;
+            }
+            
+            return { success: true, queue_number: nextQueue };
+        } catch (error) {
+            console.error('Error getting next queue number:', error);
+            // Fallback jika error, return timestamp kecil atau random
+            return { success: false, error: error.message };
+        }
+    }
+
+    // 4. Get Queue Status (Current & List)
+    async getQueueStatus() {
+        try {
+            // A. Dapatkan antrian yang sedang diproses (Status 'processing')
+            // Ambil yang queue_number-nya paling kecil (yang duluan masuk)
+            const { data: currentQueueData, error: currentError } = await supabase
+                .from('sales')
+                .select('queue_number')
+                .eq('status', 'processing')
+                .order('queue_number', { ascending: true })
+                .limit(1);
+
+            if (currentError) throw currentError;
+
+            // B. Dapatkan daftar antrian aktif (Pending & Processing) untuk list
+            const { data: queueList, error: listError } = await supabase
+                .from('sales')
+                .select('queue_number, customer_name, status, product_name')
+                .in('status', ['pending', 'processing'])
+                .order('queue_number', { ascending: true });
+            
+            if (listError) throw listError;
+            
+            // C. Grouping data berdasarkan queue_number (karena 1 queue = banyak item sales)
+            const groupedQueue = {};
+            
+            if (queueList) {
+                queueList.forEach(order => {
+                    if (!order.queue_number) return; // Skip jika null
+                    
+                    if (!groupedQueue[order.queue_number]) {
+                        groupedQueue[order.queue_number] = {
+                            queue_number: order.queue_number,
+                            customer_name: order.customer_name,
+                            status: order.status,
+                            items: []
+                        };
+                    }
+                    // Jika ada satu item statusnya processing, anggap grup itu processing
+                    if (order.status === 'processing') {
+                        groupedQueue[order.queue_number].status = 'processing';
+                    }
+                    groupedQueue[order.queue_number].items.push(order.product_name);
+                });
+            }
+            
+            const currentQueueNum = (currentQueueData && currentQueueData.length > 0) 
+                ? currentQueueData[0].queue_number 
+                : 0;
+
+            return { 
+                success: true, 
+                data: {
+                    current_queue: currentQueueNum,
+                    queue_list: Object.values(groupedQueue).sort((a,b) => a.queue_number - b.queue_number)
+                }
+            };
+
+        } catch (error) {
+            console.error('Error getting queue status:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // 5. Clear Queue (Tandai Selesai)
+    async clearQueue(queueNumber) {
+        try {
+            // Update semua item dengan nomor antrian tersebut menjadi 'completed'
+            const { data, error } = await supabase
+                .from('sales')
+                .update({ status: 'completed' })
+                .eq('queue_number', queueNumber)
+                .select();
+            
+            if (error) throw error;
+            return { success: true, data };
+        } catch (error) {
+            console.error('Error clearing queue:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // 6. Reset Queue (Emergency/Closing)
+    async resetQueue() {
+        try {
+            // Batalkan semua yang masih pending/processing dan hapus nomor antriannya
+            // Atau cukup set status ke cancelled
+            const { data, error } = await supabase
+                .from('sales')
+                .update({ 
+                    status: 'cancelled',
+                    // Opsional: queue_number: null 
+                })
+                .in('status', ['pending', 'processing']);
+            
+            if (error) throw error;
+            return { success: true, data };
+        } catch (error) {
+            console.error('Error resetting queue:', error);
+            return { success: false, error: error.message };
+        }
+    }
 }
-
-
 
 // Global instance
 const supabaseClient = new SupabaseClient();

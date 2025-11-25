@@ -417,42 +417,6 @@ body {
     color: var(--primary-color);
 }
 
-/* === FORM ELEMENTS === */
-.form-group {
-    margin-bottom: 20px;
-}
-
-.form-label {
-    display: block;
-    margin-bottom: 8px;
-    font-weight: bold;
-    color: var(--text-dark);
-}
-
-.form-input {
-    width: 100%;
-    padding: 12px 15px;
-    border: 1px solid #ddd;
-    border-radius: var(--radius-sm);
-    font-size: 1rem;
-    transition: var(--transition);
-}
-
-.form-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.2);
-}
-
-.input-error {
-    border-color: #e74c3c !important;
-    background-color: #fdf2f2 !important;
-}
-
-.required-star {
-    color: #e74c3c;
-}
-
 /* === BUTTONS === */
 .btn {
     display: block;
@@ -554,7 +518,7 @@ body {
     margin: 0 auto 15px;
 }
 
-/* === HISTORY PAGE STYLES (TAMBAHAN BARU) === */
+/* === HISTORY PAGE STYLES === */
 .history-list-container {
     padding-bottom: 20px;
 }
@@ -585,21 +549,30 @@ body {
     margin-bottom: 5px;
 }
 
-.history-status {
+/* Status Classes - Digunakan oleh History dan Queue */
+.status-tag, 
+.history-status, 
+.queue-item-status {
     display: inline-block;
     padding: 4px 10px;
     border-radius: 12px;
     font-size: 0.8rem;
     font-weight: bold;
     color: white;
-    margin-top: 10px;
     text-transform: capitalize;
 }
 
+.history-status {
+    margin-top: 10px; /* Specific for history layout */
+}
+
+/* Warna Status yang Konsisten */
 .status-pending { background-color: #f39c12; }
 .status-confirmed { background-color: #2ecc71; }
 .status-cancelled { background-color: #e74c3c; }
 .status-mixed { background-color: #3498db; }
+.status-processing { background-color: #3498db; }
+.status-completed { background-color: #27ae60; }
 
 .history-item {
     display: flex;
@@ -634,10 +607,9 @@ body {
     font-size: 1.1rem;
 }
 
-/* === TAMBAHAN BARU (Catatan Riwayat) === */
 .history-notes {
     padding: 10px 15px;
-    background: #fffbef; /* Warna kuning muda seperti kertas catatan */
+    background: #fffbef;
     border-top: 1px solid #eee;
     font-size: 0.9rem;
     color: var(--text-dark);
@@ -646,11 +618,10 @@ body {
 .history-notes-text {
     margin: 5px 0 0 0;
     line-height: 1.4;
-    font-family: inherit; /* Pakai font yang sama dengan sisa web */
-    white-space: pre-wrap; /* Ini penting agar baris baru tampil */
-    word-wrap: break-word; /* Agar teks panjang tidak merusak layout */
+    font-family: inherit;
+    white-space: pre-wrap;
+    word-wrap: break-word;
 }
-/* === AKHIR TAMBAHAN === */
 
 .empty-history {
     text-align: center;
@@ -680,9 +651,8 @@ body {
     opacity: 0.8;
 }
 
-/* === TAMBAHAN BARU (Tombol Batal Riwayat) === */
 .history-cancel-btn {
-    background-color: #e74c3c; /* Warna merah (batal) */
+    background-color: #e74c3c;
     color: white;
     border: none;
     padding: 10px 15px;
@@ -690,14 +660,13 @@ body {
     cursor: pointer;
     transition: var(--transition);
     font-weight: 600;
-    margin: 0px 15px 15px 15px; /* Margin (top, sides, bottom, sides) */
-    width: calc(100% - 30px); /* Lebar penuh dikurangi padding samping */
+    margin: 0px 15px 15px 15px;
+    width: calc(100% - 30px);
     font-size: 0.9rem;
 }
 .history-cancel-btn:hover {
-    background-color: #c0392b; /* Warna merah lebih gelap saat hover */
+    background-color: #c0392b;
 }
-/* === AKHIR TAMBAHAN === */
 
 @keyframes spin {
     0% { transform: rotate(0deg); }
@@ -721,7 +690,7 @@ body {
     max-width: 350px;
 }
 
-/* === TAMBAHAN UTILITY HISTORY === */
+/* === UTILITY HISTORY ACTIONS === */
 .history-actions {
     padding: 10px 15px;
     background-color: #f8f9fa;
@@ -738,7 +707,7 @@ body {
 
 .btn-upload {
     flex: 1;
-    background-color: #3498db; /* Biru */
+    background-color: #3498db;
     color: white;
     border: none;
     padding: 10px;
@@ -756,10 +725,9 @@ body {
     background-color: #2980b9;
 }
 
-/* Modifikasi tombol cancel agar muat di sebelah tombol upload */
 .history-cancel-btn {
     flex: 1;
-    margin: 0 !important; /* Override margin lama */
+    margin: 0 !important;
     width: auto !important;
 }
 
@@ -773,6 +741,91 @@ body {
 .proof-badge.pending {
     background-color: #ffeaa7;
     color: #d35400;
+}
+
+/* === STYLING ANTRIAN (QUEUE) - BARU === */
+.queue-container {
+    padding: 20px;
+}
+
+.current-queue-section, .your-queue-section {
+    text-align: center;
+    margin-bottom: 30px;
+    padding: 20px;
+    background: white;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-light);
+}
+
+.queue-title {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: var(--text-dark);
+    margin-bottom: 15px;
+}
+
+.current-queue-number {
+    font-size: 4rem;
+    font-weight: bold;
+    color: var(--primary-color);
+    margin: 10px 0;
+}
+
+.your-queue-number {
+    font-size: 3rem;
+    font-weight: bold;
+    color: var(--secondary-color);
+    margin: 10px 0;
+}
+
+.queue-subtitle {
+    color: var(--text-light);
+    font-size: 0.9rem;
+}
+
+.queue-list {
+    margin: 20px 0;
+}
+
+.queue-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    margin-bottom: 10px;
+    background: white;
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-light);
+    border-left: 4px solid transparent;
+}
+
+.queue-item.current {
+    border-left-color: var(--primary-color);
+    background: #fff8e1; /* Light orange background */
+}
+
+.queue-item.yours {
+    border-left-color: var(--secondary-color);
+    background-color: #e0f2f1; /* Light teal background */
+}
+
+.queue-item-number {
+    font-weight: bold;
+    font-size: 1.2rem;
+    color: var(--primary-color);
+}
+
+.queue-item-customer {
+    flex: 1;
+    margin: 0 15px;
+}
+
+/* Status item antrian menggunakan .queue-item-status yang sudah didefinisikan di atas (shared dengan history) */
+
+.empty-queue {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-light);
 }
 
 /* === RESPONSIVE ADJUSTMENTS === */

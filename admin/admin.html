@@ -8,6 +8,46 @@
     <link rel="icon" type="image/png" sizes="32x32" href="favicon_io/favicon-32x32.png">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-client.js"></script>
+    
+    <style>
+        /* Styling Khusus Antrian Admin (Inline agar tidak merusak admin.css utama) */
+        .queue-management {
+            padding: 10px;
+        }
+        .current-queue-display {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #e3f2fd; /* Light Blue */
+            border-radius: 8px;
+            border: 1px solid #90caf9;
+        }
+        #admin-current-queue {
+            font-size: 2.5rem;
+            color: var(--info-color);
+            display: block;
+            margin-top: 5px;
+        }
+        .queue-admin-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+        }
+        .queue-admin-item.current {
+            background-color: #e8f5e9; /* Light Green */
+            border-left: 4px solid var(--success-color);
+        }
+        .queue-list-admin {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+    </style>
 </head>
 <body>
 
@@ -60,7 +100,29 @@
                 </div>
             </section>
             
+            <section class="card" id="queue-controls">
+                <h2 class="section-title">🔊 Kelola Antrian</h2>
+                <div class="queue-management">
+                    <div class="current-queue-display">
+                        <span>Sedang memanggil antrian:</span>
+                        <strong id="admin-current-queue">-</strong>
+                    </div>
+                    
+                    <div class="action-buttons" style="justify-content: center;">
+                        <button class="btn btn-success" id="next-queue-btn">⏭️ Panggil Berikutnya</button>
+                        <button class="btn btn-info" id="clear-current-queue-btn">✅ Tandai Selesai</button>
+                        <button class="btn btn-danger" id="reset-queue-btn">🔄 Reset Hari Ini</button>
+                    </div>
+
+                    <h4 style="margin-top: 15px; margin-bottom: 5px;">Daftar Tunggu:</h4>
+                    <div class="queue-list-admin" id="queue-list-admin">
+                        <div style="padding: 10px; text-align: center; color: #777;">Memuat antrian...</div>
+                    </div>
+                </div>
+            </section>
+            
             <section class="card" id="order-controls">
+                <h2 class="section-title">Daftar Pesanan</h2>
                 <div class="filter-group">
                     <label for="status-filter">Filter Status:</label>
                     <select id="status-filter">
@@ -69,7 +131,7 @@
                         <option value="confirmed">Confirmed</option>
                         <option value="cancelled">Cancelled</option>
                     </select>
-                    <button class="btn" id="refresh-orders-btn">🔄 Refresh</button>
+                    <button class="btn" id="refresh-orders-btn">🔄 Refresh Data</button>
                 </div>
                 <div class="selected-info" id="selected-info">
                     <span id="selected-count">0</span> pesanan dipilih
@@ -91,7 +153,7 @@
                             <th class="checkbox-col">
                                 <input type="checkbox" id="select-all-checkbox">
                             </th>
-                            <th>Waktu Pesan</th>
+                            <th>No. Antri</th> <th>Waktu Pesan</th>
                             <th>Customer</th>
                             <th>Items</th>
                             <th>Total</th>
@@ -100,8 +162,7 @@
                         </tr>
                     </thead>
                     <tbody id="orders-table-body">
-                        <!-- Data akan diisi oleh JavaScript -->
-                    </tbody>
+                        </tbody>
                 </table>
                 <div class="table-loading" id="orders-loading">Memuat data pesanan...</div>
                 <div class="no-data" id="orders-no-data" style="display:none;">
@@ -156,8 +217,7 @@
                                 </tr>
                             </thead>
                             <tbody id="products-table-body">
-                                <!-- Data akan diisi oleh JavaScript -->
-                            </tbody>
+                                </tbody>
                         </table>
                         <div class="table-loading" id="products-loading">Memuat data produk...</div>
                         <div class="no-data" id="products-no-data" style="display:none;">

@@ -6,21 +6,17 @@
         <title>Bi Eem</title>
         <link rel="stylesheet" href="styles.css">
         <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-            <!-- Favicon Comprehensive -->
-        <link rel="apple-touch-icon" sizes="180x180" href="favicon_io/apple-touch-icon.png">
+            <link rel="apple-touch-icon" sizes="180x180" href="favicon_io/apple-touch-icon.png">
         <link rel="icon" type="image/png" sizes="32x32" href="favicon_io/favicon-32x32.png">
         <link rel="icon" type="image/png" sizes="16x16" href="favicon_io/favicon-16x16.png">
         <link rel="icon" type="image/x-icon" href="favicon_io/favicon.ico">
         
-        <!-- Android Chrome -->
         <link rel="icon" type="image/png" sizes="192x192" href="favicon_io/android-chrome-192x192.png">
         <link rel="icon" type="image/png" sizes="512x512" href="favicon_io/android-chrome-512x512.png">
         
-        <!-- Web App Manifest -->
         <link rel="manifest" href="favicon_io/site.webmanifest">
 </head>
 <body>
-    <!-- Splash Screen -->
     <div class="splash-screen" id="splash-screen">
         <div style="margin-top: 120px;">
             <h1 class="splash-title">Warung Bi Eem</h1>
@@ -32,9 +28,7 @@
         <img src="bieem.png" alt="" class="splash-image">
     </div>
 
-    <!-- Main App Container -->
     <div class="container">
-        <!-- Home Page -->
         <div class="page active" id="home-page">
             <div class="header">
                 <h1 class="header-title">Warung Bi Eem</h1>
@@ -55,12 +49,10 @@
             </div>
             
             <div class="menu-grid" id="menu-grid">
-                <!-- Menu items will be loaded from database -->
-            </div>
+                </div>
             
         </div>
 
-        <!-- Orders/Confirmation Page -->
         <div class="page" id="orders-page">
             <div class="header">
                 <h1 class="header-title">Warung Bi Eem</h1>
@@ -83,7 +75,6 @@
             <div class="order-summary">
                 <h2 class="order-title">Pesanan</h2>
                 <div id="cart-items">
-                    <!-- Cart items will be loaded here -->
                     <div class="empty-cart">
                         <div class="empty-cart-icon">🛒</div>
                         <p>Keranjang masih kosong.</p>
@@ -114,13 +105,42 @@
             <button class="btn btn-primary" id="confirm-order-btn">Konfirmasi</button>
         </div>
 
-        <!-- Success Page -->
         <div class="page" id="success-page">
             <div class="success-screen">
                 <div class="success-icon">✅</div>
                 <h2 class="success-title">Sukses !</h2>
-                <p class="success-message">Pesanan Anda berhasil.<br>Silakan lakukan pembayaran.</p>
-                <button class="btn btn-secondary" id="go-pay-btn">pembayaran</button>
+                <p class="success-message">Pesanan Anda berhasil.<br>Nomor Antrian: <strong id="queue-number" style="font-size: 1.5rem; color: var(--primary-color);">-</strong><br>Silakan lakukan pembayaran.</p>
+                <button class="btn btn-secondary" id="go-pay-btn">Lihat Status Antrian</button>
+            </div>
+        </div>
+
+        <div class="page" id="queue-page">
+            <div class="header">
+                <h1 class="header-title">Status Antrian</h1>
+            </div>
+            
+            <div class="queue-container">
+                <div class="current-queue-section">
+                    <h3 class="queue-title">Sedang Diproses</h3>
+                    <div class="current-queue-number" id="current-queue-number">
+                        - 
+                    </div>
+                    <p class="queue-subtitle">Antrian saat ini</p>
+                </div>
+                
+                <div class="your-queue-section">
+                    <h3 class="queue-title">Nomor Antrian Anda</h3>
+                    <div class="your-queue-number" id="your-queue-number">
+                        -
+                    </div>
+                    <p class="queue-subtitle" id="queue-estimation">Perkiraan waktu: -</p>
+                </div>
+                
+                <h3 class="queue-title" style="margin-top: 20px;">Daftar Menunggu</h3>
+                <div class="queue-list" id="queue-list">
+                    </div>
+                
+                <button class="btn btn-primary" id="refresh-queue-btn" style="margin-top: 20px;">🔄 Refresh Status</button>
             </div>
         </div>
 
@@ -132,10 +152,9 @@
             <p class="page-subtitle" style="text-align: center;">lakukan pembayaran dan tunggu admin mengkonfirmasi</p>
             
             <div id="history-list-container">
-                </div>
+            </div>
         </div>
 
-        <!-- Bottom Navigation -->
         <div class="bottom-nav">
             <a href="#" class="nav-item active" data-page="home-page">
                 <div class="nav-icon">🏠</div>
@@ -144,15 +163,17 @@
             <a href="#" class="nav-item" data-page="orders-page">
                 <div class="nav-icon">🛒</div> <span style="color: white;">Cart</span> <div class="cart-badge" id="cart-badge">0</div>
             </a>
+            <a href="#" class="nav-item" data-page="queue-page">
+                <div class="nav-icon">📊</div>
+                <span style="color: white;">Antrian</span>
+            </a>
             <a href="#" class="nav-item" data-page="history-page">
                 <div class="nav-icon">📜</div>
                 <span style="color: white;">History</span>
             </a>
         </div>
     </div>
-        <!-- Di head section -->
 
-    <!-- Sebelum script.js -->
     <script src="supabase-client.js"></script>
     <script src="script.js"></script>
 </body>
