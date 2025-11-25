@@ -2,7 +2,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // === GLOBAL STATE ===
     let orders = [];
-    let products = [];
     let groupedOrders = {};
     let autoRefresh = true;
     let autoRefreshTimer = null;
@@ -13,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const REFRESH_INTERVAL = 5000;
 
     // === ELEMENT SELECTORS ===
+    // Navigation & Layout
     const tabButtons = document.querySelectorAll('.tab-btn');
     const mobileTabButtons = document.querySelectorAll('.mobile-tab-btn');
     const pages = document.querySelectorAll('.page');
@@ -22,13 +22,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const mobileMenuBtn = document.getElementById('mobile-menu-btn');
     const mobileNav = document.getElementById('mobile-nav');
 
-    // Halaman Pesanan
+    // Halaman Pesanan (Orders)
     const ordersPage = document.getElementById('orders-page');
     const ordersTableBody = document.getElementById('orders-table-body');
     const ordersLoading = document.getElementById('orders-loading');
     const ordersNoData = document.getElementById('orders-no-data');
     const statusFilter = document.getElementById('status-filter');
     const refreshOrdersBtn = document.getElementById('refresh-orders-btn');
+    
+    // Order Actions
     const confirmOrderBtn = document.getElementById('confirm-order-btn');
     const cancelOrderBtn = document.getElementById('cancel-order-btn');
     const viewOrderBtn = document.getElementById('view-order-btn');
@@ -39,7 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedCount = document.getElementById('selected-count');
     const selectedInfo = document.getElementById('selected-info');
 
-    // Selectors Antrian Admin
+    // Queue Controls (Admin)
     const adminCurrentQueueEl = document.getElementById('admin-current-queue');
     const nextQueueBtn = document.getElementById('next-queue-btn');
     const clearQueueBtn = document.getElementById('clear-current-queue-btn');
@@ -52,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const statPendingOrders = document.getElementById('stat-pending-orders');
     const statConfirmedOrders = document.getElementById('stat-confirmed-orders');
 
-    // Halaman Produk
+    // Halaman Produk (Products)
     const productsPage = document.getElementById('products-page');
     const productsTableBody = document.getElementById('products-table-body');
     const productsLoading = document.getElementById('products-loading');
@@ -77,9 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // === HELPER FUNCTIONS ===
     const showLoading = (msg = null) => {
-        if (!isRefreshing) {
-            loadingOverlay.classList.add('active');
-        }
+        if (!isRefreshing) loadingOverlay.classList.add('active');
         if (msg) updateStatus(msg);
     };
     
@@ -98,24 +98,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return "Rp " + value.toLocaleString('id-ID');
     };
 
-    const hasDataChanged = (newData, oldData, dataType) => {
-        if (!oldData || oldData.length === 0) {
-            return newData && newData.length > 0;
-        }
-        if (newData.length !== oldData.length) {
-            return true;
-        }
-        if (dataType === 'orders') {
-            const latestOldOrder = oldData[0]?.updated_at || oldData[0]?.sale_date;
-            const latestNewOrder = newData[0]?.updated_at || newData[0]?.sale_date;
-            if (latestNewOrder !== latestOldOrder) return true;
-            
-            const checkCount = Math.min(5, newData.length);
-            for (let i = 0; i < checkCount; i++) {
-                if (newData[i]?.status !== oldData[i]?.status) return true;
-                if (newData[i]?.payment_proof_url !== oldData[i]?.payment_proof_url) return true;
-                if (newData[i]?.queue_number !== oldData[i]?.queue_number) return true;
-            }
+    // Helper Date Today (Local)
+    const getTodayDateStr = () => {
+        const now = new Date();
+        const offset = now.getTimezoneOffset() * 60000;
+        return (new Date(now - offset)).toISOString().slice(0, 10);
+    };
+
+    // Cek perubahan data untuk update UI efisien
+    const hasDataChanged = (newData, oldData) => {
+        if (!oldData || oldData.length === 0) return newData && newData.length > 0;
+        if (newData.length !== oldData.length) return true;
+        // Cek item pertama untuk timestamp update
+        const latestOld = oldData[0]?.updated_at || oldData[0]?.sale_date;
+        const latestNew = newData[0]?.updated_at || newData[0]?.sale_date;
+        if (latestNew !== latestOld) return true;
+        
+        // Deep check status/queue pada 5 item teratas
+        const checkCount = Math.min(5, newData.length);
+        for (let i = 0; i < checkCount; i++) {
+            if (newData[i]?.status !== oldData[i]?.status) return true;
+            if (newData[i]?.queue_number !== oldData[i]?.queue_number) return true;
         }
         return false;
     };
@@ -135,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pageId === 'orders-page') {
             if (orders.length === 0) loadOrders();
             loadQueueData(); 
-        } else if (pageId === 'products-page' && products.length === 0) {
+        } else if (pageId === 'products-page') {
             loadProducts();
         }
     };
@@ -144,7 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
     mobileTabButtons.forEach(btn => btn.addEventListener('click', () => showPage(btn.dataset.page)));
     mobileMenuBtn.addEventListener('click', () => mobileNav.classList.toggle('active'));
 
-    // === CHECKLIST SELECTION FUNCTIONS ===
+    // === CHECKLIST / SELECTION LOGIC ===
     const updateSelectedInfo = () => {
         selectedCount.textContent = selectedOrders.size;
         selectedInfo.style.display = selectedOrders.size > 0 ? 'inline-block' : 'none';
@@ -166,9 +169,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const toggleOrderSelection = (checkbox) => {
         const groupKey = checkbox.dataset.groupKey;
-        if (checkbox.checked) {
-            selectedOrders.add(groupKey);
-        } else {
+        if (checkbox.checked) selectedOrders.add(groupKey);
+        else {
             selectedOrders.delete(groupKey);
             selectAllCheckbox.checked = false;
         }
@@ -182,19 +184,12 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSelectedInfo();
     };
 
-    const selectAllOrders = () => {
-        selectAllCheckbox.checked = true;
-        toggleSelectAll();
-    };
-
-    // === DATA LOADING & PROCESSING (ORDERS) ===
+    // === LOAD ORDERS ===
     async function loadOrders() {
         if (isRefreshing) return;
-        
         isRefreshing = true;
         ordersLoading.style.display = 'block';
         ordersNoData.style.display = 'none';
-        updateStatus('Memuat data pesanan...');
         
         try {
             const { data, error } = await supabase
@@ -205,24 +200,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error) throw error;
             
             const newData = data || [];
-            const dataChanged = hasDataChanged(newData, orders, 'orders');
-            
-            if (dataChanged) {
+            if (hasDataChanged(newData, orders)) {
                 orders = newData;
                 groupOrders();
-                
-                requestAnimationFrame(() => {
-                    renderOrders();
-                    updateDashboardStats();
-                });
-                updateStatus(`✅ Data terupdate ${new Date().toLocaleTimeString('id-ID')} - ${orders.length} item`);
-            } else {
-                updateStatus(`✅ Data sudah terbaru ${new Date().toLocaleTimeString('id-ID')}`);
+                renderOrders();
+                updateDashboardStats();
+                updateStatus(`✅ Data terupdate ${new Date().toLocaleTimeString('id-ID')}`);
             }
-            
         } catch (error) {
             console.error('Error memuat pesanan:', error);
-            updateStatus(`❌ Error memuat pesanan: ${error.message}`, true);
+            updateStatus(`❌ Error: ${error.message}`, true);
         } finally {
             ordersLoading.style.display = 'none';
             isRefreshing = false;
@@ -235,7 +222,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const order of orders) {
             const customer = order.customer_name || 'Unknown';
             const sale_date = order.sale_date.substring(0, 16); 
-            // Group key
+            // Key grouping
             const groupKey = `${customer}_${sale_date}`;
             
             if (!groupedOrders[groupKey]) {
@@ -262,9 +249,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        // Tentukan status grup
         for (const key in groupedOrders) {
             const group = groupedOrders[key];
-            const statuses = new Set(group.items.map(item => item.status || 'pending'));
+            const statuses = new Set(group.items.map(item => item.status));
             
             if (statuses.size === 1) {
                 group.status = statuses.values().next().value;
@@ -280,25 +268,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const filter = statusFilter.value;
         const fragment = document.createDocumentFragment();
         let hasVisibleData = false;
-
         const sortedGroups = Object.values(groupedOrders);
-        
+
         if (sortedGroups.length === 0) {
-            ordersNoData.style.display = 'block';
             ordersTableBody.innerHTML = '';
+            ordersNoData.style.display = 'block';
             return;
         }
 
         sortedGroups.forEach(group => {
-            const status = group.status;
             if (filter !== 'semua') {
-                if (filter === 'pending' && (status !== 'pending' && status !== 'mixed')) return;
-                else if (filter !== 'pending' && filter !== status) return;
+                if (filter === 'pending' && (group.status !== 'pending' && group.status !== 'mixed')) return;
+                else if (filter !== 'pending' && filter !== group.status) return;
             }
 
             hasVisibleData = true;
-            const tr = createOrderRow(group);
-            fragment.appendChild(tr);
+            fragment.appendChild(createOrderRow(group));
         });
 
         ordersTableBody.innerHTML = '';
@@ -310,17 +295,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const tr = document.createElement('tr');
         tr.dataset.groupKey = group.key;
 
-        const notesDisplay = (group.notes.length > 50) ? group.notes.substring(0, 50) + '...' : group.notes;
         const readableDate = new Date(group.datetime).toLocaleString('id-ID', {
-            day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
         });
 
         const isSelected = selectedOrders.has(group.key);
         const proofIcon = group.payment_proof 
             ? '<span title="Ada Bukti Pembayaran" style="cursor:help; margin-left:5px;">📸</span>' 
             : '';
-        const customerHtml = `<a href="#" class="customer-link">${group.customer}</a>`;
-
+        
         // Badge Antrian
         const queueDisplay = group.queue_number 
             ? `<span style="font-weight:bold; font-size:1.1em; color:var(--primary-color);">#${group.queue_number}</span>` 
@@ -332,33 +315,22 @@ document.addEventListener('DOMContentLoaded', () => {
             </td>
             <td style="text-align:center;">${queueDisplay}</td> 
             <td>${readableDate}</td>
-            <td>${customerHtml} ${proofIcon}</td>
-            <td>${group.items.length} item(s)</td>
+            <td><a href="#" class="customer-link">${group.customer}</a> ${proofIcon}</td>
+            <td>${group.items.length} items</td>
             <td>${formatRupiah(group.total_amount)}</td>
             <td><span class="status-tag status-${group.status}">${group.status}</span></td>
-            <td>${notesDisplay}</td>
+            <td>${group.notes.substring(0, 30)}</td>
         `;
 
         const checkbox = tr.querySelector('.order-checkbox');
-        checkbox.addEventListener('change', (e) => {
-            e.stopPropagation();
-            toggleOrderSelection(checkbox);
+        checkbox.addEventListener('change', (e) => { e.stopPropagation(); toggleOrderSelection(checkbox); });
+
+        tr.querySelector('.customer-link').addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation(); viewOrderDetails(group.key); 
         });
 
-        const nameLink = tr.querySelector('.customer-link');
-        if (nameLink) {
-            nameLink.addEventListener('click', (e) => {
-                e.preventDefault(); e.stopPropagation(); viewOrderDetails(group.key); 
-            });
-        }
-
         tr.addEventListener('click', (e) => {
-            if (e.target.type !== 'checkbox' && !e.target.classList.contains('customer-link')) {
-                if (!e.shiftKey) {
-                    tr.parentElement.querySelectorAll('tr.selected').forEach(row => {
-                        if (row !== tr) row.classList.remove('selected');
-                    });
-                }
+            if (e.target !== checkbox && !e.target.classList.contains('customer-link')) {
                 tr.classList.toggle('selected');
                 checkbox.checked = !checkbox.checked;
                 toggleOrderSelection(checkbox);
@@ -369,36 +341,37 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateDashboardStats() {
-        let totalSales = 0;
-        let totalSold = 0;
-        let pendingCount = 0;
-        let confirmedCount = 0;
-
+        let totalSales = 0, totalSold = 0, pendingCount = 0, confirmedCount = 0;
         for (const order of orders) {
-            const status = order.status || 'pending';
-            if (status === 'confirmed') {
+            if (order.status === 'completed') {
                 totalSales += order.total || 0;
                 totalSold += order.quantity || 0;
-                confirmedCount += 1;
-            } else if (status === 'pending') {
-                pendingCount += 1;
+            } else if (order.status === 'pending') {
+                pendingCount++;
+            } else if (order.status === 'confirmed') {
+                confirmedCount++;
             }
         }
-        
         statTotalSales.textContent = formatRupiah(totalSales);
         statTotalSold.textContent = `${totalSold} pcs`;
         statPendingOrders.textContent = `${pendingCount} item`;
         statConfirmedOrders.textContent = `${confirmedCount} item`;
     }
 
-    // === QUEUE MANAGEMENT (ANTRIAN) - DIPERBAIKI ===
+    // === QUEUE MANAGEMENT (ALUR BARU) ===
 
+    // Load Queue: HANYA Confirmed & Processing
     async function loadQueueData() {
         try {
             const result = await supabaseClient.getQueueStatus();
             if (result.success) {
                 currentQueue = result.data.current_queue || 0;
-                updateQueueDisplay();
+                
+                // Update Display Besar
+                adminCurrentQueueEl.textContent = currentQueue > 0 ? `#${currentQueue}` : '-';
+                adminCurrentQueueEl.style.color = currentQueue > 0 ? '#ff9800' : '#ccc';
+
+                // Render Sidebar List
                 renderAdminQueueList(result.data.queue_list || []);
             }
         } catch (error) {
@@ -406,48 +379,49 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function updateQueueDisplay() {
-        if (adminCurrentQueueEl) {
-            adminCurrentQueueEl.textContent = currentQueue > 0 ? `#${currentQueue}` : '-';
-        }
-    }
-
     function renderAdminQueueList(queueList) {
         if (!queueListAdminEl) return;
         
-        const activeQueues = queueList.filter(q => q.status === 'pending' || q.status === 'processing');
+        // Filter: Confirmed (Menunggu) & Processing (Sedang Diproses)
+        // Pending tidak masuk sini
+        const activeQueues = queueList.filter(q => q.status === 'confirmed' || q.status === 'processing');
 
         if (activeQueues.length === 0) {
-            queueListAdminEl.innerHTML = '<div style="padding:15px; text-align:center; color:#888;">Tidak ada antrian aktif.</div>';
+            queueListAdminEl.innerHTML = '<div style="padding:15px; text-align:center; color:#888;">Tidak ada antrian menunggu.</div>';
             return;
         }
 
-        queueListAdminEl.innerHTML = activeQueues.map(queue => `
-            <div class="queue-admin-item ${queue.queue_number === currentQueue ? 'current' : ''}">
-                <span class="queue-number" style="font-weight:bold; font-size:1.1em; color:var(--primary-color);">#${queue.queue_number}</span>
+        queueListAdminEl.innerHTML = activeQueues.map(queue => {
+            const isProcessing = queue.status === 'processing';
+            const statusColor = isProcessing ? 'var(--primary-color)' : 'var(--info-color)';
+            const statusText = isProcessing ? 'DIPANGGIL' : 'MENUNGGU';
+            const bgColor = isProcessing ? '#fff8e1' : '#fff';
+
+            return `
+            <div class="queue-admin-item" style="background: ${bgColor}; border-left: 4px solid ${statusColor};">
+                <span class="queue-number" style="font-weight:bold; font-size:1.2em; color:${statusColor};">#${queue.queue_number}</span>
                 <div class="queue-customer" style="flex:1; margin:0 10px;">
                     <strong>${queue.customer_name}</strong><br>
-                    <small>${queue.items.join(', ').substring(0, 30)}${queue.items.length > 1 ? '...' : ''}</small>
+                    <small style="color:#666;">${queue.items.length} item</small>
                 </div>
-                <span class="status-tag status-${queue.status}" style="font-size:0.75em;">${queue.status}</span>
+                <span class="status-tag" style="background:${statusColor};">${statusText}</span>
             </div>
-        `).join('');
+            `;
+        }).join('');
     }
 
-    // Fungsi: Panggil Antrian Berikutnya (DIPERBAIKI)
+    // Tombol: Panggil Berikutnya
+    // Logika: Cari status 'Confirmed' dengan nomor antrian terkecil HARI INI
     async function nextQueue() {
-        showLoading('Memproses...');
+        showLoading('Memanggil...');
         try {
-            // Helper untuk dapat tanggal hari ini
-            const now = new Date();
-            const offset = now.getTimezoneOffset() * 60000;
-            const todayStr = (new Date(now - offset)).toISOString().slice(0, 10);
+            const todayStr = getTodayDateStr();
 
-            // 1. Cari antrian pending terlama HARI INI
+            // 1. Cari antrian 'confirmed' terlama
             const { data, error } = await supabase
                 .from('sales')
                 .select('queue_number')
-                .eq('status', 'pending')
+                .eq('status', 'confirmed') // FIX: Cari yang Confirmed
                 .gte('sale_date', `${todayStr}T00:00:00`)
                 .order('queue_number', { ascending: true })
                 .limit(1);
@@ -457,7 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data && data.length > 0) {
                 const nextNum = data[0].queue_number;
                 
-                // 2. Update status SEMUA ITEM di antrian itu menjadi processing
+                // 2. Pindahkan ke Processing
                 const result = await supabaseClient.moveToProcessing(nextNum);
 
                 if (result.success) {
@@ -468,26 +442,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     throw new Error(result.error);
                 }
             } else {
-                alert('Tidak ada antrian pending hari ini.');
+                alert('Tidak ada antrian yang menunggu (Confirmed) hari ini.');
             }
         } catch (error) {
             console.error(error);
-            updateStatus(`❌ Error: ${error.message}`, true);
+            updateStatus(`❌ Gagal: ${error.message}`, true);
         } finally {
             hideLoading();
         }
     }
 
-    // Fungsi: Selesaikan Antrian Saat Ini
+    // Tombol: Selesaikan Antrian
+    // Logika: Ubah Processing -> Completed
     async function clearCurrentQueue() {
         if (currentQueue === 0) {
             alert('Tidak ada antrian yang sedang dipanggil.');
             return;
         }
         
-        if (!confirm(`Tandai antrian #${currentQueue} sebagai selesai (Completed)?`)) {
-            return;
-        }
+        if (!confirm(`Selesaikan antrian #${currentQueue}?`)) return;
         
         showLoading('Menyelesaikan...');
         try {
@@ -500,19 +473,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(result.error);
             }
         } catch (error) {
-            updateStatus(`❌ Gagal menyelesaikan antrian: ${error.message}`, true);
+            updateStatus(`❌ Gagal: ${error.message}`, true);
         } finally {
             hideLoading();
         }
     }
 
-    // Fungsi: Reset Semua Antrian (HARI INI)
+    // Tombol: Reset Antrian (Harian)
     async function resetQueue() {
-        if (!confirm('Reset semua antrian HARI INI? Status pending/processing akan dibatalkan.')) {
-            return;
-        }
+        if (!confirm('Reset semua antrian HARI INI?')) return;
         
-        showLoading('Mereset antrian...');
+        showLoading('Resetting...');
         try {
             const result = await supabaseClient.resetQueue();
             if (result.success) {
@@ -523,31 +494,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(result.error);
             }
         } catch (error) {
-            updateStatus(`❌ Gagal reset antrian: ${error.message}`, true);
+            updateStatus(`❌ Gagal: ${error.message}`, true);
         } finally {
             hideLoading();
         }
     }
 
-    // === ORDER ACTIONS ===
+    // === ORDER ACTIONS (CONFIRM / CANCEL) ===
+    
+    // Fungsi Konfirmasi: Ubah Pending -> Confirmed
+    // Ini yang memasukkan pesanan ke dalam antrian tunggu
     async function updateOrderStatus(newStatus) {
-        if (selectedOrders.size === 0) {
-            alert(`Pilih satu atau lebih pesanan untuk di-${newStatus}.`);
-            return;
-        }
-
-        const actionText = (newStatus === 'confirmed') ? 'mengkonfirmasi' : 'membatalkan';
-        if (!confirm(`Anda yakin ingin ${actionText} ${selectedOrders.size} grup pesanan ini?`)) {
-            return;
-        }
+        if (selectedOrders.size === 0) return alert(`Pilih pesanan dulu.`);
         
-        showLoading(`Sedang ${actionText} pesanan...`);
+        const actionText = (newStatus === 'confirmed') ? 'mengkonfirmasi (Masuk Antrian)' : 'membatalkan';
+        if (!confirm(`Anda yakin ingin ${actionText} ${selectedOrders.size} pesanan ini?`)) return;
+        
+        showLoading('Updating...');
         
         let allItemIds = [];
         selectedOrders.forEach(key => {
-            if (groupedOrders[key]) {
-                allItemIds.push(...groupedOrders[key].order_ids);
-            }
+            if (groupedOrders[key]) allItemIds.push(...groupedOrders[key].order_ids);
         });
 
         try {
@@ -562,26 +529,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (error) throw error;
             
-            updateStatus(`✅ Berhasil: ${data.length} item telah di-${newStatus}.`);
+            updateStatus(`✅ Berhasil: ${data.length} item updated.`);
             await loadOrders();
-            await loadQueueData(); 
+            await loadQueueData(); // Refresh sidebar antrian
             clearAllSelections();
             
         } catch (error) {
-            console.error(`Gagal ${actionText} pesanan:`, error);
-            updateStatus(`❌ Gagal ${actionText} pesanan: ${error.message}`, true);
+            console.error(error);
+            updateStatus(`❌ Gagal: ${error.message}`, true);
         } finally {
             hideLoading();
         }
     }
 
+    // === MODAL DETAIL ===
     function viewOrderDetails(specificGroupKey = null) {
         let groupKey = typeof specificGroupKey === 'string' ? specificGroupKey : Array.from(selectedOrders)[0];
-        
-        if (!groupKey || (selectedOrders.size !== 1 && !specificGroupKey)) {
-            alert('Pilih HANYA SATU pesanan untuk dilihat detailnya.');
-            return;
-        }
+        if (!groupKey) return alert('Pilih satu pesanan.');
         
         const group = groupedOrders[groupKey];
         if (!group) return;
@@ -601,24 +565,14 @@ document.addEventListener('DOMContentLoaded', () => {
         --------------------------------\n`;
 
         group.items.forEach((item, index) => {
-            details += `
-        ${index + 1}. ${item.product_name}
-           Qty: ${item.quantity} x ${formatRupiah(item.price)}
-           Subtotal: ${formatRupiah(item.total)}
-        \n`;
+            details += `${index + 1}. ${item.product_name} (${item.quantity}x) - ${formatRupiah(item.total)}\n`;
         });
         
-        details += `
-        --------------------------------
-        💵 TOTAL: ${formatRupiah(group.total_amount)}
-        
-        📝 CATATAN:
-        ${group.notes || 'Tidak ada catatan'}
-        `;
+        details += `\n💵 TOTAL: ${formatRupiah(group.total_amount)}\n📝 CATATAN: ${group.notes || '-'}`;
 
         if (!group.payment_proof) details += `\n(Belum ada bukti pembayaran)`;
 
-        modalTitle.textContent = 'Detail Group Pesanan';
+        modalTitle.textContent = 'Detail Pesanan';
         modalBody.textContent = details;
 
         if (group.payment_proof) {
@@ -626,7 +580,7 @@ document.addEventListener('DOMContentLoaded', () => {
             imgContainer.className = 'proof-image-container';
             imgContainer.style.marginTop = '15px';
             imgContainer.innerHTML = `
-                <h4 style="margin-bottom:10px; color:var(--primary-color);">📸 Bukti Pembayaran</h4>
+                <h4 style="margin-bottom:10px;">📸 Bukti Pembayaran</h4>
                 <a href="${group.payment_proof}" target="_blank">
                     <img src="${group.payment_proof}" style="max-width: 100%; max-height: 300px; border-radius: 8px;">
                 </a>
@@ -637,103 +591,69 @@ document.addEventListener('DOMContentLoaded', () => {
         modalOverlay.classList.add('active');
     }
 
-    // === PRODUCT ACTIONS ===
+    // === PRODUCT MANAGEMENT (Basic) ===
+    // Disederhanakan karena fokus pada perbaikan queue, tapi tetap fungsional
+    let products = [];
     async function loadProducts() {
         productsLoading.style.display = 'block';
         productsNoData.style.display = 'none';
         try {
-            const { data, error } = await supabase.from('products').select('*').order('code', { ascending: true });
-            if (error) throw error;
+            const { data, error } = await supabase.from('products').select('*').order('code');
+            if(error) throw error;
             products = data || [];
             renderProducts();
-        } catch (error) { console.error(error); } 
+        } catch(e) { console.error(e); } 
         finally { productsLoading.style.display = 'none'; }
     }
 
     function renderProducts() {
-        const fragment = document.createDocumentFragment();
-        if (products.length === 0) {
-            productsNoData.style.display = 'block';
-            productsTableBody.innerHTML = '';
-            return;
-        }
-        products.forEach(product => {
-            const tr = document.createElement('tr');
-            tr.dataset.productId = product.id;
-            tr.innerHTML = `<td>${product.id}</td><td>${product.code}</td><td>${product.name}</td><td>${formatRupiah(product.price)}</td>`;
-            tr.addEventListener('click', () => {
-                tr.classList.toggle('selected');
-                if (tr.classList.contains('selected')) {
-                    fillProductForm(product);
-                    tr.parentElement.querySelectorAll('tr.selected').forEach(row => {if (row!==tr) row.classList.remove('selected')});
-                } else clearProductForm();
-            });
-            fragment.appendChild(tr);
-        });
         productsTableBody.innerHTML = '';
-        productsTableBody.appendChild(fragment);
-    }
-    
-    function fillProductForm(product) {
-        productIdInput.value = product.id;
-        productNameInput.value = product.name;
-        productPriceInput.value = product.price;
-        productCodeInput.value = product.code;
-        saveProductBtn.textContent = '💾 Update Produk';
-        saveProductBtn.classList.remove('btn-success'); saveProductBtn.classList.add('btn-info');
+        if(products.length === 0) { productsNoData.style.display = 'block'; return; }
+        
+        products.forEach(p => {
+            const tr = document.createElement('tr');
+            tr.dataset.productId = p.id;
+            tr.innerHTML = `<td>${p.id}</td><td>${p.code}</td><td>${p.name}</td><td>${formatRupiah(p.price)}</td>`;
+            tr.onclick = () => {
+                fillProductForm(p);
+                productsTableBody.querySelectorAll('.selected').forEach(row => row.classList.remove('selected'));
+                tr.classList.add('selected');
+            };
+            productsTableBody.appendChild(tr);
+        });
     }
 
-    function clearProductForm() {
-        productForm.reset();
-        productIdInput.value = '';
-        saveProductBtn.textContent = '➕ Tambah Produk';
-        saveProductBtn.classList.remove('btn-info'); saveProductBtn.classList.add('btn-success');
+    function fillProductForm(p) {
+        productIdInput.value = p.id; productNameInput.value = p.name;
+        productPriceInput.value = p.price; productCodeInput.value = p.code;
+        saveProductBtn.textContent = 'Update';
     }
 
     async function handleSaveProduct(e) {
         e.preventDefault();
+        const p = { name: productNameInput.value, price: productPriceInput.value, code: productCodeInput.value };
         const id = productIdInput.value;
-        const productData = { name: productNameInput.value.trim(), price: parseFloat(productPriceInput.value), code: productCodeInput.value.trim() };
-        showLoading('Menyimpan produk...');
         try {
-            if (id) await supabase.from('products').update(productData).eq('id', id);
-            else await supabase.from('products').insert([productData]);
-            clearProductForm(); await loadProducts(); updateStatus('✅ Produk tersimpan');
-        } catch (e) { updateStatus('❌ Gagal simpan', true); }
-        finally { hideLoading(); }
+            if(id) await supabase.from('products').update(p).eq('id', id);
+            else await supabase.from('products').insert([p]);
+            loadProducts(); productForm.reset(); productIdInput.value=''; saveProductBtn.textContent='Tambah';
+        } catch(e) { alert(e.message); }
     }
 
-    async function deleteSelectedProducts() {
-        const selectedIds = [...productsTableBody.querySelectorAll('tr.selected')].map(tr => tr.dataset.productId);
-        if (selectedIds.length === 0) return alert('Pilih produk dihapus');
-        if (!confirm('Hapus produk?')) return;
-        showLoading('Menghapus...');
-        try { await supabase.from('products').delete().in('id', selectedIds); await loadProducts(); }
-        catch (e) { console.error(e); } finally { hideLoading(); }
-    }
-    
-    function generateProductCode() {
-         productCodeInput.value = 'P' + Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    async function deleteProduct() {
+        const id = productIdInput.value;
+        if(!id || !confirm('Hapus?')) return;
+        await supabase.from('products').delete().eq('id', id);
+        loadProducts(); productForm.reset();
     }
 
-    // === AUTO-REFRESH ===
-    function toggleAutoRefresh() {
-        autoRefresh = autoRefreshToggle.checked;
-        if (autoRefresh) startAutoRefresh();
-        else clearInterval(autoRefreshTimer);
-    }
-
+    // === AUTO REFRESH ===
     function startAutoRefresh() {
         if (autoRefreshTimer) clearInterval(autoRefreshTimer);
         autoRefreshTimer = setInterval(() => {
-            if (!isRefreshing) {
-                const activePage = document.querySelector('.page.active').id;
-                if (activePage === 'orders-page') {
-                    loadOrders();
-                    loadQueueData(); 
-                } else if (activePage === 'products-page') {
-                    loadProducts();
-                }
+            if (!isRefreshing && document.getElementById('orders-page').classList.contains('active')) {
+                loadOrders();
+                loadQueueData();
             }
         }, REFRESH_INTERVAL);
     }
@@ -741,32 +661,38 @@ document.addEventListener('DOMContentLoaded', () => {
     // === EVENT LISTENERS ===
     statusFilter.addEventListener('change', renderOrders);
     refreshOrdersBtn.addEventListener('click', () => { loadOrders(); loadQueueData(); });
+    
+    // Actions
     confirmOrderBtn.addEventListener('click', () => updateOrderStatus('confirmed'));
     cancelOrderBtn.addEventListener('click', () => updateOrderStatus('cancelled'));
     viewOrderBtn.addEventListener('click', () => viewOrderDetails());
-    selectAllBtn.addEventListener('click', selectAllOrders);
+    
+    // Selectors
+    selectAllBtn.addEventListener('click', () => { selectAllCheckbox.checked = true; toggleSelectAll(); });
     clearSelectionBtn.addEventListener('click', clearAllSelections);
     selectAllCheckbox.addEventListener('change', toggleSelectAll);
 
-    // Queue Listeners
-    if (nextQueueBtn) nextQueueBtn.addEventListener('click', nextQueue);
-    if (clearQueueBtn) clearQueueBtn.addEventListener('click', clearCurrentQueue);
-    if (resetQueueBtn) resetQueueBtn.addEventListener('click', resetQueue);
+    // Queue
+    if(nextQueueBtn) nextQueueBtn.addEventListener('click', nextQueue);
+    if(clearQueueBtn) clearQueueBtn.addEventListener('click', clearCurrentQueue);
+    if(resetQueueBtn) resetQueueBtn.addEventListener('click', resetQueue);
 
-    // Product Listeners
+    // Products
     productForm.addEventListener('submit', handleSaveProduct);
-    clearFormBtn.addEventListener('click', clearProductForm);
-    generateCodeBtn.addEventListener('click', generateProductCode);
+    clearFormBtn.addEventListener('click', () => { productForm.reset(); productIdInput.value=''; });
     refreshProductsBtn.addEventListener('click', loadProducts);
-    deleteProductBtn.addEventListener('click', deleteSelectedProducts);
+    deleteProductBtn.addEventListener('click', deleteProduct);
+    generateCodeBtn.addEventListener('click', () => productCodeInput.value = 'P'+Math.floor(Math.random()*1000));
 
+    // UI
     closeModalBtn.addEventListener('click', () => modalOverlay.classList.remove('active'));
-    modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) modalOverlay.classList.remove('active'); });
-    autoRefreshToggle.addEventListener('change', toggleAutoRefresh);
+    autoRefreshToggle.addEventListener('change', () => { 
+        autoRefresh = autoRefreshToggle.checked;
+        if(autoRefresh) startAutoRefresh(); else clearInterval(autoRefreshTimer);
+    });
 
     // === INIT ===
-    updateStatus('Menghubungkan ke Supabase...');
-    showPage('orders-page');
+    updateStatus('Ready');
     loadOrders();
     loadQueueData();
     loadProducts();

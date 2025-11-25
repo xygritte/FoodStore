@@ -250,7 +250,9 @@ async function loadProducts() {
     }
 }
 
-// === CHECKOUT LOGIC (MODIFIED FOR QUEUE) ===
+// === CHECKOUT LOGIC (ALUR BARU) ===
+// 1. Pesan -> Status 'Pending'
+// 2. Tidak langsung masuk antrian display (tunggu admin confirm)
 async function processCheckout() {
     if (isProcessing) return;
     
@@ -276,17 +278,16 @@ async function processCheckout() {
         const insertedOrders = [];
         const insertedOrderIds = [];
 
-        // 1. DAPATKAN NOMOR ANTRIAN BARU
-        // (Pastikan fungsi getNextQueueNumber ada di supabase-client.js nanti)
+        // 1. DAPATKAN NOMOR ANTRIAN (Tetap di-assign saat order, tapi belum aktif)
         const queueResult = await supabaseClient.getNextQueueNumber();
         if (!queueResult.success) {
             throw new Error("Gagal mendapatkan nomor antrian: " + queueResult.error);
         }
         
         yourQueueNumber = queueResult.queue_number;
-        localStorage.setItem('lastQueueNumber', yourQueueNumber); // Simpan agar tahan refresh
+        localStorage.setItem('lastQueueNumber', yourQueueNumber);
 
-        // 2. INSERT ITEMS DENGAN NOMOR ANTRIAN
+        // 2. INSERT ITEMS (Status: PENDING)
         for (const item of cart) {
             const orderData = {
                 sale_date: saleTime,
@@ -297,8 +298,8 @@ async function processCheckout() {
                 total: item.total,
                 customer_name: customerName,
                 notes: notes,
-                status: 'pending',
-                queue_number: yourQueueNumber // <--- TAMBAHAN PENTING
+                status: 'pending', // Pending = Belum masuk layar antrian
+                queue_number: yourQueueNumber
             };
             
             const result = await supabaseClient.createOrder(orderData);
@@ -313,23 +314,23 @@ async function processCheckout() {
         
         saveOrderIdsToLocalStorage(insertedOrderIds);
         
-        // 3. SUKSES
+        // 3. UI RESET & SUCCESS
         cart = [];
         renderCart();
         customerNameInput.value = '';
         notesInput.value = '';
         customerNameInput.classList.remove('input-error');
         
-        // Update UI Success Page dengan nomor antrian
+        // Tampilkan nomor antrian di success page
         const queueNumberDisplay = document.getElementById('queue-number');
         if (queueNumberDisplay) {
             queueNumberDisplay.textContent = yourQueueNumber;
         }
         
-        showNotification(`✅ Order Berhasil! Antrian No: ${yourQueueNumber}`);
+        showNotification(`✅ Pesanan Terkirim! Menunggu Konfirmasi Admin.`);
         showPage('success-page');
         
-        // Refresh display antrian jika ada di background
+        // Update display (Antrian user akan muncul sebagai "Menunggu Konfirmasi")
         updateQueueDisplay();
         
     } catch (error) {
@@ -447,7 +448,6 @@ function renderOrderHistory(orders) {
                 items: [],
                 total_amount: 0,
                 status: 'mixed',
-                // Tambahkan queue_number ke grouping display jika ada
                 queue_number: order.queue_number
             };
         }
@@ -455,7 +455,7 @@ function renderOrderHistory(orders) {
         groupedOrders[groupKey].total_amount += order.total;
     }
     
-    // Sorting & Status Logic
+    // Sorting
     const sortedGroups = Object.values(groupedOrders).map(group => {
         const statuses = new Set(group.items.map(item => item.status));
         if (statuses.size === 1) group.status = statuses.values().next().value;
@@ -497,7 +497,6 @@ function renderOrderHistory(orders) {
             day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
         });
 
-        // Tampilkan Nomor Antrian di Header History jika ada
         const queueBadge = group.queue_number 
             ? `<span style="background:var(--primary-color); color:white; padding:2px 6px; border-radius:4px; font-size:0.8em; margin-left:5px;">Antrian #${group.queue_number}</span>` 
             : '';
@@ -542,53 +541,56 @@ function renderOrderHistory(orders) {
     }
 }
 
-// === FUNGSI ANTRIAN (QUEUE LOGIC) - BARU ===
+// === FUNGSI ANTRIAN DISPLAY (CUSTOMER) - ALUR BARU ===
 async function updateQueueDisplay() {
     try {
+        // Hanya mengambil Confirmed & Processing (Pending tidak diambil)
         const result = await supabaseClient.getQueueStatus();
         
         if (result.success) {
             const queueData = result.data;
             
-            // Update Antrian Saat Ini
+            // 1. Update Antrian Saat Ini (Big Number)
+            // Ini adalah nomor yang statusnya 'processing'
+            const currentQ = queueData.current_queue || '-';
             const currentQueueEl = document.getElementById('current-queue-number');
-            if (currentQueueEl) {
-                // Jika 0 atau null, tampilkan '-'
-                currentQueueEl.textContent = queueData.current_queue ? queueData.current_queue : '-';
-            }
+            if(currentQueueEl) currentQueueEl.textContent = currentQ;
             
-            // Update Antrian Anda (dari LocalStorage atau Checkout barusan)
+            // 2. Update Status Antrian User
             const yourQueueEl = document.getElementById('your-queue-number');
+            const estimationEl = document.getElementById('queue-estimation');
+            
             if (yourQueueEl && yourQueueNumber) {
                 yourQueueEl.textContent = yourQueueNumber;
                 
-                // Estimasi Waktu
-                const estimationEl = document.getElementById('queue-estimation');
-                if (estimationEl && queueData.current_queue) {
-                    const current = queueData.current_queue;
-                    const yours = yourQueueNumber;
+                // Cek status user
+                const isInList = queueData.queue_list.find(q => q.queue_number === yourQueueNumber);
+                
+                if (currentQ === yourQueueNumber) {
+                    // Jika nomor user = current queue (Processing)
+                    estimationEl.textContent = 'Giliran Anda! Silakan ke kasir/menunggu sajian.';
+                    estimationEl.style.color = 'var(--primary-color)';
+                    estimationEl.style.fontWeight = 'bold';
+                } else if (isInList) {
+                    // Jika ada di list tapi belum dipanggil (Confirmed/Waiting)
+                    // Hitung ada berapa orang di depannya
+                    const peopleAhead = queueData.queue_list.filter(q => q.queue_number < yourQueueNumber && (q.status === 'confirmed' || q.status === 'processing')).length;
                     
-                    if (yours === current) {
-                        estimationEl.textContent = 'Giliran Anda! Silakan ke kasir/menunggu dipanggil.';
-                        estimationEl.style.color = 'var(--primary-color)';
-                        estimationEl.style.fontWeight = 'bold';
-                    } else if (yours > current) {
-                        const diff = yours - current;
-                        const estimatedTime = diff * 5; // Asumsi 5 menit per antrian
-                        estimationEl.textContent = `Menunggu ${diff} antrian lagi (±${estimatedTime} menit)`;
-                        estimationEl.style.color = 'var(--text-light)';
-                    } else {
-                        estimationEl.textContent = 'Antrian Anda sudah lewat.';
-                        estimationEl.style.color = '#7f8c8d';
-                    }
+                    estimationEl.textContent = `Dalam Antrian (Menunggu ${peopleAhead} orang lagi)`;
+                    estimationEl.style.color = 'var(--text-dark)';
                 } else {
-                    if (estimationEl) estimationEl.textContent = 'Menunggu antrian dimulai...';
+                    // Jika TIDAK ada di list (berarti masih Pending atau sudah Completed)
+                    // Karena kita baru checkout, kemungkinan besar masih Pending
+                    // Atau jika nomornya kecil sekali, mungkin sudah Completed
+                    estimationEl.textContent = 'Menunggu Konfirmasi Admin...';
+                    estimationEl.style.color = '#e67e22'; // Orange
                 }
             } else if (yourQueueEl) {
                 yourQueueEl.textContent = '-';
+                if(estimationEl) estimationEl.textContent = '-';
             }
             
-            // Render List Antrian
+            // 3. Render Daftar Antrian
             renderQueueList(queueData.queue_list || []);
         }
     } catch (error) {
@@ -600,33 +602,27 @@ function renderQueueList(queueList) {
     const queueListEl = document.getElementById('queue-list');
     if (!queueListEl) return;
     
-    // Filter antrian yang statusnya pending atau processing saja untuk tampilan customer
-    // dan urutkan
-    const activeQueues = queueList.filter(q => 
-        q.status === 'pending' || q.status === 'processing'
-    ).sort((a, b) => a.queue_number - b.queue_number);
-
-    if (activeQueues.length === 0) {
-        queueListEl.innerHTML = '<div class="empty-queue">Tidak ada antrian yang menunggu.</div>';
+    // Backend (getQueueStatus) sudah memfilter hanya Confirmed & Processing
+    // Jadi di sini kita tinggal render. Pending tidak akan muncul.
+    
+    if (queueList.length === 0) {
+        queueListEl.innerHTML = '<div class="empty-queue">Belum ada antrian yang dipanggil.</div>';
         return;
     }
     
-    // Ambil nomor antrian current dari DOM jika ada, untuk highlight
-    const currentQText = document.getElementById('current-queue-number')?.textContent;
-    const currentQ = parseInt(currentQText) || 0;
-
-    queueListEl.innerHTML = activeQueues.map(queue => {
-        const isCurrent = queue.queue_number === currentQ;
+    queueListEl.innerHTML = queueList.map(queue => {
+        const isCurrent = queue.status === 'processing'; // Sedang dipanggil
         const isYours = queue.queue_number === yourQueueNumber;
         
-        let statusClass = 'pending';
-        if (queue.status === 'processing') statusClass = 'processing';
+        // Class status untuk styling warna (confirmed=biru/waiting, processing=kuning/active)
+        let statusClass = queue.status === 'processing' ? 'processing' : 'confirmed';
+        let statusText = queue.status === 'processing' ? 'Diproses' : 'Menunggu';
         
         return `
         <div class="queue-item ${isCurrent ? 'current' : ''} ${isYours ? 'yours' : ''}">
             <span class="queue-item-number">#${queue.queue_number}</span>
             <span class="queue-item-customer">${queue.customer_name}</span>
-            <span class="queue-item-status status-${statusClass}">${queue.status}</span>
+            <span class="queue-item-status status-${statusClass}">${statusText}</span>
         </div>
         `;
     }).join('');
@@ -640,11 +636,9 @@ function showPage(pageId) {
     const pageToShow = document.getElementById(pageId);
     if (pageToShow) pageToShow.classList.add('active');
 
-    // Trigger loads based on page
     if (pageId === 'history-page') loadOrderHistory();
     if (pageId === 'queue-page') updateQueueDisplay();
     
-    // Update nav icons
     const navItems = document.querySelectorAll('.nav-item');
     navItems.forEach(item => item.classList.remove('active'));
     const activeNavItem = document.querySelector(`[data-page="${pageId}"]`);
@@ -668,9 +662,7 @@ function setupCategoryFilter() {
         btn.addEventListener('click', function() {
             categoryBtns.forEach(b => b.classList.remove('active'));
             this.classList.add('active');
-            
             currentCategory = this.getAttribute('data-category');
-            
             if (currentCategory === 'confirmation') {
                 showPage('orders-page');
             } else {
@@ -687,7 +679,6 @@ function setupCategoryFilter() {
 document.addEventListener('DOMContentLoaded', function() {
     console.log('App Started');
     
-    // Splash
     setTimeout(function() {
         const splash = document.getElementById('splash-screen');
         if (splash) {
@@ -698,16 +689,15 @@ document.addEventListener('DOMContentLoaded', function() {
     
     setupNavigation();
     setupCategoryFilter();
-    loadProducts(); // Load Menu awal
+    loadProducts();
     
-    // Event Listeners
     const confirmBtn = document.getElementById('confirm-order-btn');
     if (confirmBtn) confirmBtn.addEventListener('click', processCheckout);
     
     const goPayBtn = document.getElementById('go-pay-btn');
     if (goPayBtn) {
         goPayBtn.addEventListener('click', () => {
-            showPage('queue-page'); // Arahkan ke halaman antrian setelah sukses
+            showPage('queue-page'); 
         });
     }
 
@@ -722,18 +712,13 @@ document.addEventListener('DOMContentLoaded', function() {
     if (searchInput) searchInput.addEventListener('input', renderProducts);
     if (searchOrders) searchOrders.addEventListener('input', renderProducts);
     
-    // Load queue data awal jika ada lastQueueNumber
-    if (yourQueueNumber) {
-        console.log("Welcome back queue #" + yourQueueNumber);
-    }
-    
-    // Auto-refresh queue setiap 10 detik jika di halaman queue
+    // Auto-refresh queue setiap 5 detik jika di halaman queue
     setInterval(() => {
         const queuePage = document.getElementById('queue-page');
         if (queuePage && queuePage.classList.contains('active')) {
             updateQueueDisplay();
         }
-    }, 10000);
+    }, 5000);
 });
 
 // Window exposure
