@@ -114,7 +114,6 @@ document.addEventListener('DOMContentLoaded', () => {
             for (let i = 0; i < checkCount; i++) {
                 if (newData[i]?.status !== oldData[i]?.status) return true;
                 if (newData[i]?.payment_proof_url !== oldData[i]?.payment_proof_url) return true;
-                // Cek perubahan status antrian
                 if (newData[i]?.queue_number !== oldData[i]?.queue_number) return true;
             }
         }
@@ -135,7 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (pageId === 'orders-page') {
             if (orders.length === 0) loadOrders();
-            loadQueueData(); // Load queue data when opening orders page
+            loadQueueData(); 
         } else if (pageId === 'products-page' && products.length === 0) {
             loadProducts();
         }
@@ -236,7 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const order of orders) {
             const customer = order.customer_name || 'Unknown';
             const sale_date = order.sale_date.substring(0, 16); 
-            // Group key sekarang bisa dipengaruhi queue_number jika ada
+            // Group key
             const groupKey = `${customer}_${sale_date}`;
             
             if (!groupedOrders[groupKey]) {
@@ -250,7 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     notes: order.notes || '',
                     order_ids: [],
                     payment_proof: null,
-                    queue_number: order.queue_number // Simpan nomor antrian di level grup
+                    queue_number: order.queue_number 
                 };
             }
             
@@ -331,7 +330,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <td class="checkbox-col">
                 <input type="checkbox" class="order-checkbox" data-group-key="${group.key}" ${isSelected ? 'checked' : ''}>
             </td>
-            <td style="text-align:center;">${queueDisplay}</td> <td>${readableDate}</td>
+            <td style="text-align:center;">${queueDisplay}</td> 
+            <td>${readableDate}</td>
             <td>${customerHtml} ${proofIcon}</td>
             <td>${group.items.length} item(s)</td>
             <td>${formatRupiah(group.total_amount)}</td>
@@ -391,7 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statConfirmedOrders.textContent = `${confirmedCount} item`;
     }
 
-    // === QUEUE MANAGEMENT (ANTRIAN) ===
+    // === QUEUE MANAGEMENT (ANTRIAN) - DIPERBAIKI ===
 
     async function loadQueueData() {
         try {
@@ -415,7 +415,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderAdminQueueList(queueList) {
         if (!queueListAdminEl) return;
         
-        // Hanya tampilkan pending dan processing
         const activeQueues = queueList.filter(q => q.status === 'pending' || q.status === 'processing');
 
         if (activeQueues.length === 0) {
@@ -435,41 +434,47 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     }
 
-    // Fungsi: Panggil Antrian Berikutnya
+    // Fungsi: Panggil Antrian Berikutnya (DIPERBAIKI)
     async function nextQueue() {
-        // Cari antrian pending dengan nomor terkecil
-        const { data, error } = await supabase
-            .from('sales')
-            .select('queue_number')
-            .eq('status', 'pending')
-            .order('queue_number', { ascending: true })
-            .limit(1);
+        showLoading('Memproses...');
+        try {
+            // Helper untuk dapat tanggal hari ini
+            const now = new Date();
+            const offset = now.getTimezoneOffset() * 60000;
+            const todayStr = (new Date(now - offset)).toISOString().slice(0, 10);
 
-        if (error) {
-            updateStatus(`❌ Error mencari antrian: ${error.message}`, true);
-            return;
-        }
-
-        if (data && data.length > 0) {
-            const nextNum = data[0].queue_number;
-            
-            // Update status menjadi processing
-            const { error: updateError } = await supabase
+            // 1. Cari antrian pending terlama HARI INI
+            const { data, error } = await supabase
                 .from('sales')
-                .update({ status: 'processing' })
-                .eq('queue_number', nextNum);
+                .select('queue_number')
+                .eq('status', 'pending')
+                .gte('sale_date', `${todayStr}T00:00:00`)
+                .order('queue_number', { ascending: true })
+                .limit(1);
 
-            if (updateError) {
-                updateStatus(`❌ Gagal update antrian: ${updateError.message}`, true);
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                const nextNum = data[0].queue_number;
+                
+                // 2. Update status SEMUA ITEM di antrian itu menjadi processing
+                const result = await supabaseClient.moveToProcessing(nextNum);
+
+                if (result.success) {
+                    updateStatus(`⏩ Memanggil antrian #${nextNum}`);
+                    await loadQueueData();
+                    await loadOrders();
+                } else {
+                    throw new Error(result.error);
+                }
             } else {
-                updateStatus(`⏩ Memanggil antrian #${nextNum}`);
-                // Jika ada antrian sebelumnya yang masih processing, mungkin kita biarkan atau tandai selesai? 
-                // Untuk sekarang, kita biarkan logic sederhana: panggil = set processing.
-                await loadQueueData();
-                await loadOrders();
+                alert('Tidak ada antrian pending hari ini.');
             }
-        } else {
-            alert('Tidak ada antrian pending.');
+        } catch (error) {
+            console.error(error);
+            updateStatus(`❌ Error: ${error.message}`, true);
+        } finally {
+            hideLoading();
         }
     }
 
@@ -484,30 +489,34 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
+        showLoading('Menyelesaikan...');
         try {
             const result = await supabaseClient.clearQueue(currentQueue);
             if (result.success) {
                 updateStatus(`✅ Antrian #${currentQueue} selesai.`);
                 await loadQueueData();
-                await loadOrders(); // Status di tabel juga berubah jadi completed
+                await loadOrders(); 
             } else {
                 throw new Error(result.error);
             }
         } catch (error) {
             updateStatus(`❌ Gagal menyelesaikan antrian: ${error.message}`, true);
+        } finally {
+            hideLoading();
         }
     }
 
-    // Fungsi: Reset Semua Antrian
+    // Fungsi: Reset Semua Antrian (HARI INI)
     async function resetQueue() {
-        if (!confirm('Reset semua antrian hari ini? Status pending/processing akan dibatalkan.')) {
+        if (!confirm('Reset semua antrian HARI INI? Status pending/processing akan dibatalkan.')) {
             return;
         }
         
+        showLoading('Mereset antrian...');
         try {
             const result = await supabaseClient.resetQueue();
             if (result.success) {
-                updateStatus('🔄 Semua antrian telah direset.');
+                updateStatus('🔄 Antrian hari ini telah direset.');
                 await loadQueueData();
                 await loadOrders();
             } else {
@@ -515,6 +524,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             updateStatus(`❌ Gagal reset antrian: ${error.message}`, true);
+        } finally {
+            hideLoading();
         }
     }
 
@@ -553,7 +564,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             updateStatus(`✅ Berhasil: ${data.length} item telah di-${newStatus}.`);
             await loadOrders();
-            await loadQueueData(); // Status queue mungkin berubah
+            await loadQueueData(); 
             clearAllSelections();
             
         } catch (error) {
@@ -626,10 +637,8 @@ document.addEventListener('DOMContentLoaded', () => {
         modalOverlay.classList.add('active');
     }
 
-    // === PRODUCT ACTIONS (Tetap sama seperti sebelumnya, diringkas) ===
+    // === PRODUCT ACTIONS ===
     async function loadProducts() {
-        // ... (Kode loadProducts sama, tidak berubah signifikan untuk fitur queue)
-        // Saya akan menyertakan implementasi dasar agar file ini lengkap
         productsLoading.style.display = 'block';
         productsNoData.style.display = 'none';
         try {
@@ -704,7 +713,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function generateProductCode() {
-         // Simple random logic for demo
          productCodeInput.value = 'P' + Math.floor(Math.random() * 1000).toString().padStart(3, '0');
     }
 
@@ -722,7 +730,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const activePage = document.querySelector('.page.active').id;
                 if (activePage === 'orders-page') {
                     loadOrders();
-                    loadQueueData(); // Refresh queue juga
+                    loadQueueData(); 
                 } else if (activePage === 'products-page') {
                     loadProducts();
                 }

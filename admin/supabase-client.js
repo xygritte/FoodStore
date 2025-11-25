@@ -9,7 +9,17 @@ const supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONF
 
 // Helper functions
 class SupabaseClient {
-    // Get all products
+    
+    // === HELPER: DAPATKAN TANGGAL HARI INI (YYYY-MM-DD) ===
+    // Penting agar antrian reset setiap pagi
+    getTodayDateStr() {
+        const now = new Date();
+        const offset = now.getTimezoneOffset() * 60000; // Offset zona waktu lokal
+        const localISOTime = (new Date(now - offset)).toISOString().slice(0, 10);
+        return localISOTime;
+    }
+
+    // === PRODUK & ORDER BASIC ===
     async getProducts() {
         try {
             const { data, error } = await supabase
@@ -25,7 +35,6 @@ class SupabaseClient {
         }
     }
 
-    // Create new order
     async createOrder(orderData) {
         try {
             const { data, error } = await supabase
@@ -41,33 +50,6 @@ class SupabaseClient {
         }
     }
 
-    // Get orders with filters
-    async getOrders(filters = {}) {
-        try {
-            let query = supabase.from('sales').select('*');
-            
-            if (filters.status && filters.status !== 'all') {
-                query = query.eq('status', filters.status);
-            }
-            
-            if (filters.date) {
-                query = query.gte('sale_date', `${filters.date}T00:00:00`)
-                           .lte('sale_date', `${filters.date}T23:59:59`);
-            }
-            
-            query = query.order('sale_date', { ascending: false });
-            
-            const { data, error } = await query;
-            
-            if (error) throw error;
-            return { success: true, orders: data };
-        } catch (error) {
-            console.error('Error fetching orders:', error);
-            return { success: false, error: error.message };
-        }
-    }
-
-    // Get specific orders by their IDs
     async getOrdersByIds(idList) {
         if (!idList || idList.length === 0) {
             return { success: true, orders: [] };
@@ -83,28 +65,6 @@ class SupabaseClient {
             return { success: true, orders: data };
         } catch (error) {
             console.error('Error fetching orders by IDs:', error);
-            return { success: false, error: error.message };
-        }
-    }
-
-    // Update order status
-    async updateOrderStatus(orderId, status) {
-        try {
-            const updates = { status };
-            if (status === 'confirmed') {
-                updates.confirmed_at = new Date().toISOString();
-            }
-            
-            const { data, error } = await supabase
-                .from('sales')
-                .update(updates)
-                .eq('id', orderId)
-                .select();
-            
-            if (error) throw error;
-            return { success: true, data };
-        } catch (error) {
-            console.error('Error updating order:', error);
             return { success: false, error: error.message };
         }
     }
@@ -129,7 +89,7 @@ class SupabaseClient {
         }
     }
 
-    // 1. Upload file ke Storage
+    // === UPLOAD BUKTI ===
     async uploadProofImage(file) {
         try {
             const fileExt = file.name.split('.').pop();
@@ -142,7 +102,6 @@ class SupabaseClient {
 
             if (error) throw error;
 
-            // Dapatkan Public URL
             const { data: publicUrlData } = supabase.storage
                 .from('payment-proofs')
                 .getPublicUrl(filePath);
@@ -154,7 +113,6 @@ class SupabaseClient {
         }
     }
 
-    // 2. Update URL bukti pembayaran ke tabel sales
     async updateOrderProof(idList, proofUrl) {
         try {
             const { data, error } = await supabase
@@ -171,23 +129,27 @@ class SupabaseClient {
         }
     }
 
-    // === FITUR ANTRIAN BARU ===
+    // === FITUR ANTRIAN (DIPERBAIKI) ===
 
-    // 3. Get Next Queue Number
+    // 1. Get Next Queue Number (RESET HARIAN)
     async getNextQueueNumber() {
         try {
-            // Cari nomor antrian tertinggi yang pernah ada
-            // Note: Idealnya direset harian, tapi untuk MVP kita ambil max global + 1
+            const todayStr = this.getTodayDateStr();
+
+            // Cari nomor antrian tertinggi HARI INI saja
             const { data, error } = await supabase
                 .from('sales')
                 .select('queue_number')
-                .not('queue_number', 'is', null) // Filter yang tidak null
+                .gte('sale_date', `${todayStr}T00:00:00`) 
+                .lte('sale_date', `${todayStr}T23:59:59`)
+                .not('queue_number', 'is', null) 
                 .order('queue_number', { ascending: false })
                 .limit(1);
             
             if (error) throw error;
             
             let nextQueue = 1;
+            // Jika hari ini sudah ada antrian, lanjutkan. Jika belum, mulai dari 1.
             if (data && data.length > 0 && data[0].queue_number) {
                 nextQueue = data[0].queue_number + 1;
             }
@@ -195,40 +157,42 @@ class SupabaseClient {
             return { success: true, queue_number: nextQueue };
         } catch (error) {
             console.error('Error getting next queue number:', error);
-            // Fallback jika error, return timestamp kecil atau random
             return { success: false, error: error.message };
         }
     }
 
-    // 4. Get Queue Status (Current & List)
+    // 2. Get Queue Status (HARI INI SAJA)
     async getQueueStatus() {
         try {
-            // A. Dapatkan antrian yang sedang diproses (Status 'processing')
-            // Ambil yang queue_number-nya paling kecil (yang duluan masuk)
+            const todayStr = this.getTodayDateStr();
+
+            // A. Dapatkan antrian yang sedang diproses (Status 'processing') HARI INI
             const { data: currentQueueData, error: currentError } = await supabase
                 .from('sales')
                 .select('queue_number')
                 .eq('status', 'processing')
+                .gte('sale_date', `${todayStr}T00:00:00`)
                 .order('queue_number', { ascending: true })
                 .limit(1);
 
             if (currentError) throw currentError;
 
-            // B. Dapatkan daftar antrian aktif (Pending & Processing) untuk list
+            // B. Dapatkan daftar antrian aktif (Pending & Processing) HARI INI
             const { data: queueList, error: listError } = await supabase
                 .from('sales')
                 .select('queue_number, customer_name, status, product_name')
                 .in('status', ['pending', 'processing'])
+                .gte('sale_date', `${todayStr}T00:00:00`)
                 .order('queue_number', { ascending: true });
             
             if (listError) throw listError;
             
-            // C. Grouping data berdasarkan queue_number (karena 1 queue = banyak item sales)
+            // C. Grouping data
             const groupedQueue = {};
             
             if (queueList) {
                 queueList.forEach(order => {
-                    if (!order.queue_number) return; // Skip jika null
+                    if (!order.queue_number) return; 
                     
                     if (!groupedQueue[order.queue_number]) {
                         groupedQueue[order.queue_number] = {
@@ -238,7 +202,6 @@ class SupabaseClient {
                             items: []
                         };
                     }
-                    // Jika ada satu item statusnya processing, anggap grup itu processing
                     if (order.status === 'processing') {
                         groupedQueue[order.queue_number].status = 'processing';
                     }
@@ -264,14 +227,16 @@ class SupabaseClient {
         }
     }
 
-    // 5. Clear Queue (Tandai Selesai)
+    // 3. Clear Queue (Tandai Selesai SEMUA ITEM di antrian itu)
     async clearQueue(queueNumber) {
         try {
-            // Update semua item dengan nomor antrian tersebut menjadi 'completed'
+            const todayStr = this.getTodayDateStr();
+
             const { data, error } = await supabase
                 .from('sales')
                 .update({ status: 'completed' })
                 .eq('queue_number', queueNumber)
+                .gte('sale_date', `${todayStr}T00:00:00`) // Hanya update hari ini
                 .select();
             
             if (error) throw error;
@@ -282,18 +247,40 @@ class SupabaseClient {
         }
     }
 
-    // 6. Reset Queue (Emergency/Closing)
+    // 4. Move to Processing (BARU: Untuk Admin Next Queue)
+    async moveToProcessing(queueNumber) {
+        try {
+            const todayStr = this.getTodayDateStr();
+
+            // Ubah SEMUA item di nomor antrian ini jadi 'processing'
+            const { data, error } = await supabase
+                .from('sales')
+                .update({ status: 'processing' })
+                .eq('queue_number', queueNumber)
+                .gte('sale_date', `${todayStr}T00:00:00`)
+                .select();
+
+            if (error) throw error;
+            return { success: true, data };
+        } catch (error) {
+            console.error('Error moving queue to processing:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // 5. Reset Queue (HARI INI SAJA)
     async resetQueue() {
         try {
-            // Batalkan semua yang masih pending/processing dan hapus nomor antriannya
-            // Atau cukup set status ke cancelled
+            const todayStr = this.getTodayDateStr();
+            
+            // Cancel semua yang masih pending/processing HARI INI
             const { data, error } = await supabase
                 .from('sales')
                 .update({ 
                     status: 'cancelled',
-                    // Opsional: queue_number: null 
                 })
-                .in('status', ['pending', 'processing']);
+                .in('status', ['pending', 'processing'])
+                .gte('sale_date', `${todayStr}T00:00:00`);
             
             if (error) throw error;
             return { success: true, data };
