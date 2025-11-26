@@ -828,6 +828,13 @@ body {
     color: var(--text-light);
 }
 
+.status-pending { 
+    background-color: #f39c12; 
+}
+.status-menunggu-konfirmasi {
+    background-color: #f39c12;
+}
+
 /* === RESPONSIVE ADJUSTMENTS === */
 @media (max-width: 480px) {
     .container {

@@ -36,7 +36,7 @@ class SupabaseClient {
         }
     }
 
-    // Buat pesanan baru (Status awal: Pending)
+    // Buat pesanan baru (Status awal: Pending, TANPA Queue Number)
     async createOrder(orderData) {
         try {
             const { data, error } = await supabase
@@ -139,8 +139,8 @@ class SupabaseClient {
 
     // === 3. MANAJEMEN ANTRIAN (ALUR BARU) ===
 
-    // A. Generate Nomor Antrian Baru (Reset Harian)
-    async getNextQueueNumber() {
+    // A. Helper Internal: Hitung Nomor Antrian Berikutnya (Reset Harian)
+    async _calculateNextQueueNumber() {
         try {
             const todayStr = this.getTodayDateStr();
 
@@ -163,12 +163,47 @@ class SupabaseClient {
             
             return { success: true, queue_number: nextQueue };
         } catch (error) {
-            console.error('Error getting next queue number:', error);
+            console.error('Error calculating next queue number:', error);
             return { success: false, error: error.message };
         }
     }
 
-    // B. Ambil Status Antrian untuk Display (HANYA Confirmed & Processing)
+    // B. (Admin Only) Assign Nomor Antrian & Konfirmasi Pesanan
+    // Dipanggil saat Admin menekan tombol "Konfirmasi"
+    async assignQueueNumber(orderIds) {
+        try {
+            // 1. Dapatkan nomor antrian berikutnya
+            const queueResult = await this._calculateNextQueueNumber();
+            if (!queueResult.success) throw new Error(queueResult.error);
+
+            const nextQueue = queueResult.queue_number;
+            const confirmedAt = new Date().toISOString();
+
+            // 2. Update pesanan: Set Status Confirmed & Queue Number
+            const { data, error } = await supabase
+                .from('sales')
+                .update({ 
+                    queue_number: nextQueue,
+                    status: 'confirmed',
+                    confirmed_at: confirmedAt
+                })
+                .in('id', orderIds)
+                .select();
+
+            if (error) throw error;
+            
+            return { 
+                success: true, 
+                data,
+                queue_number: nextQueue // Kembalikan nomor antrian agar bisa ditampilkan di notifikasi admin
+            };
+        } catch (error) {
+            console.error('Error assigning queue number:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // C. Ambil Status Antrian untuk Display (HANYA Confirmed & Processing)
     // Pending TIDAK akan muncul di sini.
     async getQueueStatus() {
         try {
@@ -237,7 +272,7 @@ class SupabaseClient {
         }
     }
 
-    // C. Pindah ke Processing (Confirmed -> Processing)
+    // D. Pindah ke Processing (Confirmed -> Processing)
     // Dipanggil saat Admin klik "Panggil" / "Next"
     async moveToProcessing(queueNumber) {
         try {
@@ -259,7 +294,7 @@ class SupabaseClient {
         }
     }
 
-    // D. Selesaikan Antrian (Processing -> Completed)
+    // E. Selesaikan Antrian (Processing -> Completed)
     // Antrian hilang dari layar display
     async clearQueue(queueNumber) {
         try {
@@ -280,15 +315,19 @@ class SupabaseClient {
         }
     }
 
-    // E. Reset Semua Antrian (Darurat/Tutup Toko)
+    // F. Reset Semua Antrian (Darurat/Tutup Toko)
     async resetQueue() {
         try {
             const todayStr = this.getTodayDateStr();
             
             // Batalkan semua yang masih Pending, Confirmed, atau Processing hari ini
+            // Set queue_number menjadi null agar tidak mengganggu urutan jika di-restart
             const { data, error } = await supabase
                 .from('sales')
-                .update({ status: 'cancelled' })
+                .update({ 
+                    status: 'cancelled',
+                    // queue_number: null // Opsional: jika ingin menghapus jejak nomor antrian
+                })
                 .in('status', ['pending', 'processing', 'confirmed'])
                 .gte('sale_date', `${todayStr}T00:00:00`);
             

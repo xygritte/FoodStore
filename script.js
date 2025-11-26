@@ -251,8 +251,8 @@ async function loadProducts() {
 }
 
 // === CHECKOUT LOGIC (ALUR BARU) ===
-// 1. Pesan -> Status 'Pending'
-// 2. Tidak langsung masuk antrian display (tunggu admin confirm)
+// 1. Pesan -> Status 'Pending' (TANPA nomor antrian)
+// 2. Nomor antrian diberikan saat admin konfirmasi
 async function processCheckout() {
     if (isProcessing) return;
     
@@ -278,16 +278,7 @@ async function processCheckout() {
         const insertedOrders = [];
         const insertedOrderIds = [];
 
-        // 1. DAPATKAN NOMOR ANTRIAN (Tetap di-assign saat order, tapi belum aktif)
-        const queueResult = await supabaseClient.getNextQueueNumber();
-        if (!queueResult.success) {
-            throw new Error("Gagal mendapatkan nomor antrian: " + queueResult.error);
-        }
-        
-        yourQueueNumber = queueResult.queue_number;
-        localStorage.setItem('lastQueueNumber', yourQueueNumber);
-
-        // 2. INSERT ITEMS (Status: PENDING)
+        // INSERT ITEMS (Status: PENDING) - TANPA NOMOR ANTRIAN
         for (const item of cart) {
             const orderData = {
                 sale_date: saleTime,
@@ -298,8 +289,9 @@ async function processCheckout() {
                 total: item.total,
                 customer_name: customerName,
                 notes: notes,
-                status: 'pending', // Pending = Belum masuk layar antrian
-                queue_number: yourQueueNumber
+                status: 'pending',
+                // queue_number: TIDAK DIASSIGN - akan diassign admin saat konfirmasi
+                payment_proof_url: null 
             };
             
             const result = await supabaseClient.createOrder(orderData);
@@ -314,24 +306,22 @@ async function processCheckout() {
         
         saveOrderIdsToLocalStorage(insertedOrderIds);
         
-        // 3. UI RESET & SUCCESS
+        // UI RESET
         cart = [];
         renderCart();
         customerNameInput.value = '';
         notesInput.value = '';
         customerNameInput.classList.remove('input-error');
         
-        // Tampilkan nomor antrian di success page
-        const queueNumberDisplay = document.getElementById('queue-number');
-        if (queueNumberDisplay) {
-            queueNumberDisplay.textContent = yourQueueNumber;
-        }
+        // Reset local storage queue number karena ini order baru
+        localStorage.removeItem('lastQueueNumber');
+        yourQueueNumber = null;
         
-        showNotification(`✅ Pesanan Terkirim! Menunggu Konfirmasi Admin.`);
-        showPage('success-page');
+        // Tampilkan pesan sukses tanpa nomor antrian
+        showNotification(`✅ Pesanan Terkirim! Mohon upload bukti pembayaran.`);
         
-        // Update display (Antrian user akan muncul sebagai "Menunggu Konfirmasi")
-        updateQueueDisplay();
+        // Langsung arahkan ke history untuk upload bukti
+        showPage('history-page'); 
         
     } catch (error) {
         console.error('Error checkout:', error);
@@ -497,9 +487,21 @@ function renderOrderHistory(orders) {
             day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
         });
 
-        const queueBadge = group.queue_number 
+        // Tampilkan nomor antrian HANYA jika status confirmed/processing dan queue_number ada
+        const hasQueueNumber = (group.status === 'confirmed' || group.status === 'processing') && group.queue_number;
+        const queueBadge = hasQueueNumber
             ? `<span style="background:var(--primary-color); color:white; padding:2px 6px; border-radius:4px; font-size:0.8em; margin-left:5px;">Antrian #${group.queue_number}</span>` 
             : '';
+
+        // Jika nomor antrian baru muncul (baru dikonfirmasi), simpan ke local storage agar halaman Antrian bisa baca
+        if (hasQueueNumber) {
+            // Update yourQueueNumber global & local jika ini transaksi terbaru
+            // Logic sederhana: jika group ini adalah yang paling baru (index 0 di sorted)
+            if (sortedGroups.indexOf(group) === 0) {
+                 yourQueueNumber = group.queue_number;
+                 localStorage.setItem('lastQueueNumber', yourQueueNumber);
+            }
+        }
 
         let actionButtonsHtml = '';
         if (group.status === 'pending' || group.status === 'mixed') {
@@ -527,11 +529,16 @@ function renderOrderHistory(orders) {
             `;
         }
 
+        // Label status untuk user
+        let displayStatus = group.status;
+        if (group.status === 'pending') displayStatus = 'Menunggu Konfirmasi';
+        if (group.status === 'mixed') displayStatus = 'Menunggu Konfirmasi';
+
         groupEl.innerHTML = `
             <div class="history-group-header">
                 <div class="history-date">${readableDate}</div>
                 <div class="history-customer">${group.customer} ${queueBadge}</div>
-                <div class="history-status status-${group.status}">${group.status}</div>
+                <div class="history-status status-${group.status}">${displayStatus}</div>
             </div>
             <div class="history-items-list">${itemsHtml}</div>
             <div class="history-total">Total: ${formatRupiah(group.total_amount)}</div>
@@ -544,6 +551,9 @@ function renderOrderHistory(orders) {
 // === FUNGSI ANTRIAN DISPLAY (CUSTOMER) - ALUR BARU ===
 async function updateQueueDisplay() {
     try {
+        // Update yourQueueNumber dari localStorage (siapa tau sudah dikonfirmasi dan direfresh di history)
+        yourQueueNumber = parseInt(localStorage.getItem('lastQueueNumber')) || null;
+
         // Hanya mengambil Confirmed & Processing (Pending tidak diambil)
         const result = await supabaseClient.getQueueStatus();
         
@@ -551,7 +561,6 @@ async function updateQueueDisplay() {
             const queueData = result.data;
             
             // 1. Update Antrian Saat Ini (Big Number)
-            // Ini adalah nomor yang statusnya 'processing'
             const currentQ = queueData.current_queue || '-';
             const currentQueueEl = document.getElementById('current-queue-number');
             if(currentQueueEl) currentQueueEl.textContent = currentQ;
@@ -560,34 +569,32 @@ async function updateQueueDisplay() {
             const yourQueueEl = document.getElementById('your-queue-number');
             const estimationEl = document.getElementById('queue-estimation');
             
-            if (yourQueueEl && yourQueueNumber) {
-                yourQueueEl.textContent = yourQueueNumber;
-                
-                // Cek status user
-                const isInList = queueData.queue_list.find(q => q.queue_number === yourQueueNumber);
-                
-                if (currentQ === yourQueueNumber) {
-                    // Jika nomor user = current queue (Processing)
-                    estimationEl.textContent = 'Giliran Anda! Silakan ke kasir/menunggu sajian.';
-                    estimationEl.style.color = 'var(--primary-color)';
-                    estimationEl.style.fontWeight = 'bold';
-                } else if (isInList) {
-                    // Jika ada di list tapi belum dipanggil (Confirmed/Waiting)
-                    // Hitung ada berapa orang di depannya
-                    const peopleAhead = queueData.queue_list.filter(q => q.queue_number < yourQueueNumber && (q.status === 'confirmed' || q.status === 'processing')).length;
+            if (yourQueueEl) {
+                if (yourQueueNumber) {
+                    yourQueueEl.textContent = yourQueueNumber;
                     
-                    estimationEl.textContent = `Dalam Antrian (Menunggu ${peopleAhead} orang lagi)`;
-                    estimationEl.style.color = 'var(--text-dark)';
+                    // Cek status user
+                    const isInList = queueData.queue_list.find(q => q.queue_number === yourQueueNumber);
+                    
+                    if (currentQ === yourQueueNumber) {
+                        estimationEl.textContent = 'Giliran Anda! Silakan ke kasir/menunggu sajian.';
+                        estimationEl.style.color = 'var(--primary-color)';
+                        estimationEl.style.fontWeight = 'bold';
+                    } else if (isInList) {
+                        const peopleAhead = queueData.queue_list.filter(q => q.queue_number < yourQueueNumber && (q.status === 'confirmed' || q.status === 'processing')).length;
+                        estimationEl.textContent = `Dalam Antrian (Menunggu ${peopleAhead} orang lagi)`;
+                        estimationEl.style.color = 'var(--text-dark)';
+                    } else {
+                        // Jika punya nomor tapi tidak ada di list (mungkin sudah completed atau cancelled)
+                        estimationEl.textContent = 'Antrian Selesai atau Tidak Ditemukan.';
+                        estimationEl.style.color = '#777';
+                    }
                 } else {
-                    // Jika TIDAK ada di list (berarti masih Pending atau sudah Completed)
-                    // Karena kita baru checkout, kemungkinan besar masih Pending
-                    // Atau jika nomornya kecil sekali, mungkin sudah Completed
-                    estimationEl.textContent = 'Menunggu pembayaran anda dikonfirmasi Admin...';
-                    estimationEl.style.color = '#e67e22'; // Orange
+                    // Belum punya nomor antrian (Masih Pending)
+                    yourQueueEl.textContent = '-';
+                    estimationEl.textContent = 'Pesanan Anda masih menunggu konfirmasi Admin.';
+                    estimationEl.style.color = '#e67e22'; 
                 }
-            } else if (yourQueueEl) {
-                yourQueueEl.textContent = '-';
-                if(estimationEl) estimationEl.textContent = '-';
             }
             
             // 3. Render Daftar Antrian
@@ -602,19 +609,15 @@ function renderQueueList(queueList) {
     const queueListEl = document.getElementById('queue-list');
     if (!queueListEl) return;
     
-    // Backend (getQueueStatus) sudah memfilter hanya Confirmed & Processing
-    // Jadi di sini kita tinggal render. Pending tidak akan muncul.
-    
     if (queueList.length === 0) {
         queueListEl.innerHTML = '<div class="empty-queue">Belum ada antrian yang dipanggil.</div>';
         return;
     }
     
     queueListEl.innerHTML = queueList.map(queue => {
-        const isCurrent = queue.status === 'processing'; // Sedang dipanggil
+        const isCurrent = queue.status === 'processing'; 
         const isYours = queue.queue_number === yourQueueNumber;
         
-        // Class status untuk styling warna (confirmed=biru/waiting, processing=kuning/active)
         let statusClass = queue.status === 'processing' ? 'processing' : 'confirmed';
         let statusText = queue.status === 'processing' ? 'Diproses' : 'Menunggu';
         

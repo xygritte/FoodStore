@@ -421,7 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const { data, error } = await supabase
                 .from('sales')
                 .select('queue_number')
-                .eq('status', 'confirmed') // FIX: Cari yang Confirmed
+                .eq('status', 'confirmed') // Cari yang statusnya Confirmed
                 .gte('sale_date', `${todayStr}T00:00:00`)
                 .order('queue_number', { ascending: true })
                 .limit(1);
@@ -502,8 +502,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // === ORDER ACTIONS (CONFIRM / CANCEL) ===
     
-    // Fungsi Konfirmasi: Ubah Pending -> Confirmed
-    // Ini yang memasukkan pesanan ke dalam antrian tunggu
+    // Fungsi Konfirmasi: Ubah Pending -> Confirmed + Assign Nomor Antrian
     async function updateOrderStatus(newStatus) {
         if (selectedOrders.size === 0) return alert(`Pilih pesanan dulu.`);
         
@@ -518,21 +517,37 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         try {
-            const { data, error } = await supabase
-                .from('sales')
-                .update({ 
-                    status: newStatus,
-                    ...(newStatus === 'confirmed' && { confirmed_at: new Date().toISOString() })
-                })
-                .in('id', allItemIds)
-                .select();
+            let result;
 
-            if (error) throw error;
-            
-            updateStatus(`✅ Berhasil: ${data.length} item updated.`);
-            await loadOrders();
-            await loadQueueData(); // Refresh sidebar antrian
-            clearAllSelections();
+            if (newStatus === 'confirmed') {
+                // LOGIKA BARU: Khusus konfirmasi gunakan assignQueueNumber untuk dapat nomor antrian
+                result = await supabaseClient.assignQueueNumber(allItemIds);
+            } else {
+                // Untuk status lain (cancel, dll), update biasa
+                const { data, error } = await supabase
+                    .from('sales')
+                    .update({ status: newStatus })
+                    .in('id', allItemIds)
+                    .select();
+                
+                if (error) throw error;
+                result = { success: true, data };
+            }
+
+            if (result.success) {
+                // Pesan sukses dengan info nomor antrian jika ada
+                let msg = `✅ Berhasil: ${allItemIds.length} item di${actionText}.`;
+                if (newStatus === 'confirmed' && result.queue_number) {
+                    msg = `✅ Order masuk Antrian #${result.queue_number}`;
+                }
+
+                updateStatus(msg);
+                await loadOrders();
+                await loadQueueData(); // Refresh sidebar antrian
+                clearAllSelections();
+            } else {
+                throw new Error(result.error);
+            }
             
         } catch (error) {
             console.error(error);
@@ -592,7 +607,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // === PRODUCT MANAGEMENT (Basic) ===
-    // Disederhanakan karena fokus pada perbaikan queue, tapi tetap fungsional
     let products = [];
     async function loadProducts() {
         productsLoading.style.display = 'block';
