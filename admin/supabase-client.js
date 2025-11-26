@@ -10,7 +10,6 @@ const supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONF
 class SupabaseClient {
     
     // === HELPER: Tanggal Hari Ini (Local Time) ===
-    // Digunakan untuk memastikan antrian & reset berlaku per hari ini saja
     getTodayDateStr() {
         const now = new Date();
         const offset = now.getTimezoneOffset() * 60000;
@@ -20,7 +19,6 @@ class SupabaseClient {
 
     // === 1. PRODUK & ORDER BASIC ===
     
-    // Ambil semua produk
     async getProducts() {
         try {
             const { data, error } = await supabase
@@ -36,7 +34,6 @@ class SupabaseClient {
         }
     }
 
-    // Buat pesanan baru (Status awal: Pending, TANPA Queue Number)
     async createOrder(orderData) {
         try {
             const { data, error } = await supabase
@@ -52,7 +49,6 @@ class SupabaseClient {
         }
     }
 
-    // Ambil pesanan berdasarkan ID (untuk History/Receipt)
     async getOrdersByIds(idList) {
         if (!idList || idList.length === 0) {
             return { success: true, orders: [] };
@@ -72,7 +68,6 @@ class SupabaseClient {
         }
     }
 
-    // Update status banyak pesanan sekaligus (misal: Cancelled)
     async updateOrderStatusByIds(idList, status) {
         if (!idList || idList.length === 0) {
             return { success: true, data: [] };
@@ -95,7 +90,6 @@ class SupabaseClient {
 
     // === 2. UPLOAD & BUKTI PEMBAYARAN ===
     
-    // Upload file gambar ke Storage Supabase
     async uploadProofImage(file) {
         try {
             const fileExt = file.name.split('.').pop();
@@ -108,7 +102,6 @@ class SupabaseClient {
 
             if (error) throw error;
 
-            // Dapatkan Public URL agar bisa dilihat Admin
             const { data: publicUrlData } = supabase.storage
                 .from('payment-proofs')
                 .getPublicUrl(filePath);
@@ -120,7 +113,6 @@ class SupabaseClient {
         }
     }
 
-    // Simpan URL bukti pembayaran ke tabel sales
     async updateOrderProof(idList, proofUrl) {
         try {
             const { data, error } = await supabase
@@ -137,14 +129,13 @@ class SupabaseClient {
         }
     }
 
-    // === 3. MANAJEMEN ANTRIAN (ALUR BARU) ===
+    // === 3. MANAJEMEN ANTRIAN ===
 
-    // A. Helper Internal: Hitung Nomor Antrian Berikutnya (Reset Harian)
+    // Helper Internal
     async _calculateNextQueueNumber() {
         try {
             const todayStr = this.getTodayDateStr();
 
-            // Cari nomor antrian tertinggi HARI INI
             const { data, error } = await supabase
                 .from('sales')
                 .select('queue_number')
@@ -168,18 +159,15 @@ class SupabaseClient {
         }
     }
 
-    // B. (Admin Only) Assign Nomor Antrian & Konfirmasi Pesanan
-    // Dipanggil saat Admin menekan tombol "Konfirmasi"
+    // Assign Nomor Antrian (Admin)
     async assignQueueNumber(orderIds) {
         try {
-            // 1. Dapatkan nomor antrian berikutnya
             const queueResult = await this._calculateNextQueueNumber();
             if (!queueResult.success) throw new Error(queueResult.error);
 
             const nextQueue = queueResult.queue_number;
             const confirmedAt = new Date().toISOString();
 
-            // 2. Update pesanan: Set Status Confirmed & Queue Number
             const { data, error } = await supabase
                 .from('sales')
                 .update({ 
@@ -195,7 +183,7 @@ class SupabaseClient {
             return { 
                 success: true, 
                 data,
-                queue_number: nextQueue // Kembalikan nomor antrian agar bisa ditampilkan di notifikasi admin
+                queue_number: nextQueue 
             };
         } catch (error) {
             console.error('Error assigning queue number:', error);
@@ -203,11 +191,12 @@ class SupabaseClient {
         }
     }
 
-    // C. Ambil Status Antrian untuk Display (HANYA Confirmed & Processing)
-    // Pending TIDAK akan muncul di sini.
+    // C. Ambil Status Antrian (FIXED & DEBUGGED)
     async getQueueStatus() {
         try {
             const todayStr = this.getTodayDateStr();
+
+            console.log('Getting queue status for date:', todayStr);
 
             // 1. Ambil Antrian yang Sedang Diproses (Status: processing)
             const { data: currentQueueData, error: currentError } = await supabase
@@ -221,7 +210,6 @@ class SupabaseClient {
             if (currentError) throw currentError;
 
             // 2. Ambil Daftar Antrian Aktif (Confirmed & Processing)
-            // Filter: Hanya hari ini & Status Confirmed/Processing
             const { data: queueList, error: listError } = await supabase
                 .from('sales')
                 .select('queue_number, customer_name, status, product_name')
@@ -231,10 +219,12 @@ class SupabaseClient {
             
             if (listError) throw listError;
             
-            // 3. Grouping data (karena 1 nomor antrian bisa punya banyak item sales)
+            console.log('Raw queue list from DB:', queueList);
+            
+            // 3. Grouping data
             const groupedQueue = {};
             
-            if (queueList) {
+            if (queueList && queueList.length > 0) {
                 queueList.forEach(order => {
                     if (!order.queue_number) return; 
                     
@@ -258,11 +248,15 @@ class SupabaseClient {
                 ? currentQueueData[0].queue_number 
                 : 0;
 
+            const finalQueueList = Object.values(groupedQueue).sort((a,b) => a.queue_number - b.queue_number);
+            
+            console.log('Final grouped queue list:', finalQueueList);
+
             return { 
                 success: true, 
                 data: {
                     current_queue: currentQueueNum,
-                    queue_list: Object.values(groupedQueue).sort((a,b) => a.queue_number - b.queue_number)
+                    queue_list: finalQueueList
                 }
             };
 
@@ -272,13 +266,11 @@ class SupabaseClient {
         }
     }
 
-    // D. Pindah ke Processing (Confirmed -> Processing)
-    // Dipanggil saat Admin klik "Panggil" / "Next"
+    // D. Pindah ke Processing
     async moveToProcessing(queueNumber) {
         try {
             const todayStr = this.getTodayDateStr();
 
-            // Update status SEMUA ITEM dengan nomor antrian tersebut menjadi 'processing'
             const { data, error } = await supabase
                 .from('sales')
                 .update({ status: 'processing' })
@@ -294,8 +286,7 @@ class SupabaseClient {
         }
     }
 
-    // E. Selesaikan Antrian (Processing -> Completed)
-    // Antrian hilang dari layar display
+    // E. Selesaikan Antrian
     async clearQueue(queueNumber) {
         try {
             const todayStr = this.getTodayDateStr();
@@ -315,18 +306,15 @@ class SupabaseClient {
         }
     }
 
-    // F. Reset Semua Antrian (Darurat/Tutup Toko)
+    // F. Reset Semua Antrian
     async resetQueue() {
         try {
             const todayStr = this.getTodayDateStr();
             
-            // Batalkan semua yang masih Pending, Confirmed, atau Processing hari ini
-            // Set queue_number menjadi null agar tidak mengganggu urutan jika di-restart
             const { data, error } = await supabase
                 .from('sales')
                 .update({ 
                     status: 'cancelled',
-                    // queue_number: null // Opsional: jika ingin menghapus jejak nomor antrian
                 })
                 .in('status', ['pending', 'processing', 'confirmed'])
                 .gte('sale_date', `${todayStr}T00:00:00`);
