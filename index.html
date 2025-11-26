@@ -6,102 +6,65 @@
         <title>Bi Eem</title>
         <link rel="stylesheet" href="styles.css">
         <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-            <link rel="apple-touch-icon" sizes="180x180" href="favicon_io/apple-touch-icon.png">
-        <link rel="icon" type="image/png" sizes="32x32" href="favicon_io/favicon-32x32.png">
-        <link rel="icon" type="image/png" sizes="16x16" href="favicon_io/favicon-16x16.png">
         <link rel="icon" type="image/x-icon" href="favicon_io/favicon.ico">
-        
-        <link rel="icon" type="image/png" sizes="192x192" href="favicon_io/android-chrome-192x192.png">
-        <link rel="icon" type="image/png" sizes="512x512" href="favicon_io/android-chrome-512x512.png">
-        
-        <link rel="manifest" href="favicon_io/site.webmanifest">
 </head>
 <body>
     <div class="splash-screen" id="splash-screen">
         <div style="margin-top: 120px;">
             <h1 class="splash-title">Warung Bi Eem</h1>
             <p class="splash-subtitle">nyaman untuk perut kamu</p>
-            <div class="loading-bar">
-                <div class="loading-progress"></div>
-            </div>
+            <div class="loading-bar"><div class="loading-progress"></div></div>
         </div>
         <img src="bieem.png" alt="" class="splash-image">
     </div>
 
     <div class="container">
         <div class="page active" id="home-page">
-            <div class="header">
-                <h1 class="header-title">Warung Bi Eem</h1>
-            </div>
-            
+            <div class="header"><h1 class="header-title">Warung Bi Eem</h1></div>
             <p class="page-subtitle">pesanan akan di proses setelah konfirmasi admin</p>
-            
             <div class="search-container">
                 <input type="text" class="search-input" placeholder="Search" id="search-input">
                 <div class="search-icon">🔍</div>
             </div>
-            
             <div class="categories">
                 <button class="category-btn active" data-category="all">All</button>
                 <button class="category-btn" data-category="food">Makanan</button>
                 <button class="category-btn" data-category="beverage">minuman</button>
                 <button class="category-btn" data-category="confirmation">Orders</button>
             </div>
-            
-            <div class="menu-grid" id="menu-grid">
-                </div>
-            
+            <div class="menu-grid" id="menu-grid"></div>
         </div>
 
         <div class="page" id="orders-page">
-            <div class="header">
-                <h1 class="header-title">Warung Bi Eem</h1>
-            </div>
-            
+            <div class="header"><h1 class="header-title">Warung Bi Eem</h1></div>
             <p class="page-subtitle">pesanan akan di proses setelah konfirmasi admin</p>
-            
             <div class="search-container">
                 <input type="text" class="search-input" placeholder="Search" id="search-orders">
                 <div class="search-icon">🔍</div>
             </div>
-            
             <div class="categories">
                 <button class="category-btn" data-category="all">Semua</button>
                 <button class="category-btn" data-category="food">Makanan</button>
                 <button class="category-btn" data-category="beverage">Minuman</button>
                 <button class="category-btn active" data-category="confirmation">Pesanan</button>
             </div>
-            
             <div class="order-summary">
                 <h2 class="order-title">Pesanan</h2>
-                <div id="cart-items">
-                    <div class="empty-cart">
-                        <div class="empty-cart-icon">🛒</div>
-                        <p>Keranjang masih kosong.</p>
-                    </div>
-                </div>
-                
-                <div class="order-total">
-                    <span>Total:</span>
-                    <span class="total-amount" id="total-amount">Rp 0</span>
-                </div>
+                <div id="cart-items"><div class="empty-cart"><div class="empty-cart-icon">🛒</div><p>Keranjang masih kosong.</p></div></div>
+                <div class="order-total"><span>Total:</span><span class="total-amount" id="total-amount">Rp 0</span></div>
             </div>
-            
             <div class="form-group">
                 <label class="form-label" for="customer-name">Order Name</label>
                 <input type="text" class="form-input" id="customer-name" placeholder="Masukkan nama lengkap Anda">
             </div>
-
             <div class="form-group">
                 <label class="form-label" for="notes">Catatan (opsional):</label>
                 <textarea class="form-input" id="notes" rows="3" placeholder="Contoh: Tidak pedas, tambah kecap, pesan antar, dll."></textarea>
             </div>
-            
             <div class="form-group">
                 <label class="form-label">Total harga</label>
                 <div class="total-price-display" id="total-price-display">Rp 0</div>
             </div>
-            
             <button class="btn btn-primary" id="confirm-order-btn">Konfirmasi</button>
         </div>
 
@@ -119,62 +82,36 @@
         </div>
 
         <div class="page" id="queue-page">
-            <div class="header">
-                <h1 class="header-title">Status Antrian</h1>
-            </div>
-            
+            <div class="header"><h1 class="header-title">Status Antrian</h1></div>
             <div class="queue-container">
                 <div class="current-queue-section">
                     <h3 class="queue-title">Sedang Diproses</h3>
-                    <div class="current-queue-number" id="current-queue-number">
-                        - 
-                    </div>
+                    <div class="current-queue-number" id="current-queue-number">-</div>
                     <p class="queue-subtitle">Antrian saat ini</p>
                 </div>
-                
                 <div class="your-queue-section">
                     <h3 class="queue-title">Nomor Antrian Anda</h3>
-                    <div class="your-queue-number" id="your-queue-number">
-                        -
-                    </div>
+                    <div class="your-queue-number" id="your-queue-number">-</div>
                     <p class="queue-subtitle" id="queue-estimation">Perkiraan waktu: -</p>
                 </div>
-                
                 <h3 class="queue-title" style="margin-top: 20px;">Daftar Menunggu</h3>
-                <div class="queue-list" id="queue-list">
-                    </div>
-                
+                <div class="queue-list" id="queue-list"></div>
                 <button class="btn btn-primary" id="refresh-queue-btn" style="margin-top: 20px;">🔄 Refresh Status</button>
             </div>
         </div>
 
         <div class="page" id="history-page">
-            <div class="header">
-                <h1 class="header-title">Riwayat Pesanan</h1>
-            </div>
+            <div class="header"><h1 class="header-title">Riwayat Pesanan</h1></div>
             <img src="qris.jpg" alt="" style="width: 40%; display: block; margin-left: auto; margin-right: auto; border-radius: 10px; margin-top: 10px;">
             <p class="page-subtitle" style="text-align: center;">lakukan pembayaran dan tunggu admin mengkonfirmasi</p>
-            
-            <div id="history-list-container">
-            </div>
+            <div id="history-list-container"></div>
         </div>
 
         <div class="bottom-nav">
-            <a href="#" class="nav-item active" data-page="home-page">
-                <div class="nav-icon">🏠</div>
-                <span style="color: white;">Home</span>
-            </a>
-            <a href="#" class="nav-item" data-page="orders-page">
-                <div class="nav-icon">🛒</div> <span style="color: white;">Cart</span> <div class="cart-badge" id="cart-badge">0</div>
-            </a>
-            <a href="#" class="nav-item" data-page="queue-page">
-                <div class="nav-icon">📊</div>
-                <span style="color: white;">Antrian</span>
-            </a>
-            <a href="#" class="nav-item" data-page="history-page">
-                <div class="nav-icon">📜</div>
-                <span style="color: white;">History</span>
-            </a>
+            <a href="#" class="nav-item active" data-page="home-page"><div class="nav-icon">🏠</div><span style="color: white;">Home</span></a>
+            <a href="#" class="nav-item" data-page="orders-page"><div class="nav-icon">🛒</div><span style="color: white;">Cart</span><div class="cart-badge" id="cart-badge">0</div></a>
+            <a href="#" class="nav-item" data-page="queue-page"><div class="nav-icon">📊</div><span style="color: white;">Antrian</span></a>
+            <a href="#" class="nav-item" data-page="history-page"><div class="nav-icon">📜</div><span style="color: white;">History</span></a>
         </div>
     </div>
 

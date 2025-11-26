@@ -131,7 +131,7 @@ class SupabaseClient {
 
     // === 3. MANAJEMEN ANTRIAN ===
 
-    // Helper Internal
+    // Helper Internal: Hitung nomor antrian berikutnya
     async _calculateNextQueueNumber() {
         try {
             const todayStr = this.getTodayDateStr();
@@ -191,15 +191,14 @@ class SupabaseClient {
         }
     }
 
-    // C. Ambil Status Antrian (FIXED & DEBUGGED)
+    // C. Ambil Status Antrian (PERBAIKAN UTAMA: FALLBACK LOGIC)
     async getQueueStatus() {
         try {
             const todayStr = this.getTodayDateStr();
+            console.log('Fetching queue for date:', todayStr);
 
-            console.log('Getting queue status for date:', todayStr);
-
-            // 1. Ambil Antrian yang Sedang Diproses (Status: processing)
-            const { data: currentQueueData, error: currentError } = await supabase
+            // 1. Ambil Antrian yang Sedang Diproses (Processing)
+            let { data: currentQueueData, error: currentError } = await supabase
                 .from('sales')
                 .select('queue_number')
                 .eq('status', 'processing')
@@ -209,17 +208,51 @@ class SupabaseClient {
 
             if (currentError) throw currentError;
 
+            // Jika processing kosong hari ini, coba cek global (fallback)
+            if (!currentQueueData || currentQueueData.length === 0) {
+                 const { data: globalProcessing } = await supabase
+                    .from('sales')
+                    .select('queue_number')
+                    .eq('status', 'processing')
+                    .order('updated_at', { ascending: false }) // Yang paling baru diupdate
+                    .limit(1);
+                
+                if (globalProcessing && globalProcessing.length > 0) {
+                    console.log('Using global processing fallback');
+                    currentQueueData = globalProcessing;
+                }
+            }
+
             // 2. Ambil Daftar Antrian Aktif (Confirmed & Processing)
-            const { data: queueList, error: listError } = await supabase
+            // QUERY UTAMA: Filter Tanggal
+            let { data: queueList, error: listError } = await supabase
                 .from('sales')
-                .select('queue_number, customer_name, status, product_name')
+                .select('queue_number, customer_name, status, product_name, sale_date')
                 .in('status', ['confirmed', 'processing']) 
                 .gte('sale_date', `${todayStr}T00:00:00`)
                 .order('queue_number', { ascending: true });
             
             if (listError) throw listError;
+
+            // LOGIKA FALLBACK: Jika kosong, coba query TANPA filter tanggal
+            // Ini untuk mengatasi masalah timezone atau tanggal yang tidak pas
+            if (!queueList || queueList.length === 0) {
+                console.warn('Queue list empty with date filter. Trying fallback (All Active Queues)...');
+                
+                const { data: fallbackList, error: fallbackError } = await supabase
+                    .from('sales')
+                    .select('queue_number, customer_name, status, product_name, sale_date')
+                    .in('status', ['confirmed', 'processing'])
+                    .not('queue_number', 'is', null) // Pastikan ada nomor antrian
+                    .order('queue_number', { ascending: true });
+                
+                if (!fallbackError) {
+                    queueList = fallbackList;
+                    console.log('Fallback data retrieved:', queueList.length, 'items');
+                }
+            }
             
-            console.log('Raw queue list from DB:', queueList);
+            console.log('Final Queue List Data:', queueList);
             
             // 3. Grouping data
             const groupedQueue = {};
@@ -236,7 +269,6 @@ class SupabaseClient {
                             items: []
                         };
                     }
-                    // Jika ada satu item statusnya processing, grup dianggap processing
                     if (order.status === 'processing') {
                         groupedQueue[order.queue_number].status = 'processing';
                     }
@@ -250,8 +282,6 @@ class SupabaseClient {
 
             const finalQueueList = Object.values(groupedQueue).sort((a,b) => a.queue_number - b.queue_number);
             
-            console.log('Final grouped queue list:', finalQueueList);
-
             return { 
                 success: true, 
                 data: {
@@ -269,13 +299,12 @@ class SupabaseClient {
     // D. Pindah ke Processing
     async moveToProcessing(queueNumber) {
         try {
-            const todayStr = this.getTodayDateStr();
-
+            // Update tanpa filter tanggal yang ketat agar tidak gagal jika beda hari
             const { data, error } = await supabase
                 .from('sales')
-                .update({ status: 'processing' })
+                .update({ status: 'processing', updated_at: new Date() })
                 .eq('queue_number', queueNumber)
-                .gte('sale_date', `${todayStr}T00:00:00`)
+                .neq('status', 'cancelled') // Jangan update yang cancelled
                 .select();
 
             if (error) throw error;
@@ -289,13 +318,11 @@ class SupabaseClient {
     // E. Selesaikan Antrian
     async clearQueue(queueNumber) {
         try {
-            const todayStr = this.getTodayDateStr();
-
             const { data, error } = await supabase
                 .from('sales')
-                .update({ status: 'completed' })
+                .update({ status: 'completed', updated_at: new Date() })
                 .eq('queue_number', queueNumber)
-                .gte('sale_date', `${todayStr}T00:00:00`)
+                .neq('status', 'cancelled')
                 .select();
             
             if (error) throw error;
@@ -315,6 +342,7 @@ class SupabaseClient {
                 .from('sales')
                 .update({ 
                     status: 'cancelled',
+                    updated_at: new Date()
                 })
                 .in('status', ['pending', 'processing', 'confirmed'])
                 .gte('sale_date', `${todayStr}T00:00:00`);
@@ -328,5 +356,4 @@ class SupabaseClient {
     }
 }
 
-// Global instance
 const supabaseClient = new SupabaseClient();
