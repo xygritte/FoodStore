@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const REFRESH_INTERVAL = 5000;
 
     // === ELEMENT SELECTORS ===
+    // Navigation & Layout
     const tabButtons = document.querySelectorAll('.tab-btn');
     const mobileTabButtons = document.querySelectorAll('.mobile-tab-btn');
     const pages = document.querySelectorAll('.page');
@@ -20,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const mobileMenuBtn = document.getElementById('mobile-menu-btn');
     const mobileNav = document.getElementById('mobile-nav');
 
-    // Halaman Pesanan
+    // Halaman Pesanan (Orders)
     const ordersPage = document.getElementById('orders-page');
     const ordersTableBody = document.getElementById('orders-table-body');
     const ordersLoading = document.getElementById('orders-loading');
@@ -28,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusFilter = document.getElementById('status-filter');
     const refreshOrdersBtn = document.getElementById('refresh-orders-btn');
     
-    // Actions
+    // Order Actions
     const confirmOrderBtn = document.getElementById('confirm-order-btn');
     const cancelOrderBtn = document.getElementById('cancel-order-btn');
     const viewOrderBtn = document.getElementById('view-order-btn');
@@ -39,20 +40,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedCount = document.getElementById('selected-count');
     const selectedInfo = document.getElementById('selected-info');
 
-    // Queue Controls
+    // Queue Controls (Admin)
     const adminCurrentQueueEl = document.getElementById('admin-current-queue');
     const nextQueueBtn = document.getElementById('next-queue-btn');
     const clearQueueBtn = document.getElementById('clear-current-queue-btn');
     const resetQueueBtn = document.getElementById('reset-queue-btn');
     const queueListAdminEl = document.getElementById('queue-list-admin');
 
-    // Stats
+    // Dashboard Stats
     const statTotalSales = document.getElementById('stat-total-sales');
     const statTotalSold = document.getElementById('stat-total-sold');
     const statPendingOrders = document.getElementById('stat-pending-orders');
     const statConfirmedOrders = document.getElementById('stat-confirmed-orders');
 
-    // Products
+    // Halaman Produk (Products)
     const productsPage = document.getElementById('products-page');
     const productsTableBody = document.getElementById('products-table-body');
     const productsLoading = document.getElementById('products-loading');
@@ -96,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return "Rp " + value.toLocaleString('id-ID');
     };
 
+    // Helper Date Today (Local)
     const getTodayDateStr = () => {
         const now = new Date();
         const offset = now.getTimezoneOffset() * 60000;
@@ -105,6 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const hasDataChanged = (newData, oldData) => {
         if (!oldData || oldData.length === 0) return newData && newData.length > 0;
         if (newData.length !== oldData.length) return true;
+        
         const latestOld = oldData[0]?.updated_at || oldData[0]?.sale_date;
         const latestNew = newData[0]?.updated_at || newData[0]?.sale_date;
         if (latestNew !== latestOld) return true;
@@ -178,7 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSelectedInfo();
     };
 
-    // === LOAD ORDERS ===
+    // === LOAD ORDERS (WITH DEBUGGING) ===
     async function loadOrders() {
         if (isRefreshing) return;
         isRefreshing = true;
@@ -194,6 +197,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error) throw error;
             
             const newData = data || [];
+            
+            // DEBUG LOGS
+            const confirmedOrders = newData.filter(order => order.status === 'confirmed');
+            console.log('Confirmed orders:', confirmedOrders);
             
             if (hasDataChanged(newData, orders)) {
                 orders = newData;
@@ -350,7 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statConfirmedOrders.textContent = `${confirmedCount} item`;
     }
 
-    // === QUEUE MANAGEMENT (ALUR BARU) ===
+    // === QUEUE MANAGEMENT ===
 
     async function loadQueueData() {
         try {
@@ -399,12 +406,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
     }
 
+    // Tombol: Panggil Berikutnya
     async function nextQueue() {
         showLoading('Memanggil...');
         try {
             const todayStr = getTodayDateStr();
 
-            // 1. Cari antrian 'confirmed' dengan fallback jika date filter gagal
             let { data, error } = await supabase
                 .from('sales')
                 .select('queue_number')
@@ -413,7 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 .order('queue_number', { ascending: true })
                 .limit(1);
 
-            // Fallback: Jika tidak ada data hari ini, coba cari SEMUA confirmed tertua
+            // Fallback jika tidak ada data hari ini
             if (!data || data.length === 0) {
                  const { data: fallbackData } = await supabase
                     .from('sales')
@@ -496,7 +503,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // === ORDER ACTIONS ===
+    // === ORDER ACTIONS (CONFIRM / CANCEL) ===
     
     async function updateOrderStatus(newStatus) {
         if (selectedOrders.size === 0) return alert(`Pilih pesanan dulu.`);
@@ -549,32 +556,152 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // === INIT & OTHER SETUP ===
-    // (Produk management, Modal, Event Listeners sama seperti sebelumnya)
-    // ... [Bagian ini tidak berubah drastis, tapi pastikan included di file utuh]
+    // === MODAL DETAIL ===
+    function viewOrderDetails(specificGroupKey = null) {
+        let groupKey = typeof specificGroupKey === 'string' ? specificGroupKey : Array.from(selectedOrders)[0];
+        if (!groupKey) return alert('Pilih satu pesanan.');
+        
+        const group = groupedOrders[groupKey];
+        if (!group) return;
+
+        const existingImg = modalContent.querySelector('.proof-image-container');
+        if (existingImg) existingImg.remove();
+
+        const queueText = group.queue_number ? `NO. ANTRIAN: #${group.queue_number}\n` : '';
+
+        let details = `
+        👤 CUSTOMER: ${group.customer}
+        ${queueText}🕒 WAKTU: ${new Date(group.datetime).toLocaleString('id-ID')}
+        ✅ STATUS: ${group.status.toUpperCase()}
+        
+        📦 ITEM PESANAN:
+        --------------------------------\n`;
+
+        group.items.forEach((item, index) => {
+            details += `${index + 1}. ${item.product_name} (${item.quantity}x) - ${formatRupiah(item.total)}\n`;
+        });
+        
+        details += `\n💵 TOTAL: ${formatRupiah(group.total_amount)}\n📝 CATATAN: ${group.notes || '-'}`;
+
+        if (!group.payment_proof) details += `\n(Belum ada bukti pembayaran)`;
+
+        modalTitle.textContent = 'Detail Pesanan';
+        modalBody.textContent = details;
+
+        if (group.payment_proof) {
+            const imgContainer = document.createElement('div');
+            imgContainer.className = 'proof-image-container';
+            imgContainer.style.marginTop = '15px';
+            imgContainer.innerHTML = `
+                <h4 style="margin-bottom:10px;">📸 Bukti Pembayaran</h4>
+                <a href="${group.payment_proof}" target="_blank">
+                    <img src="${group.payment_proof}" style="max-width: 100%; max-height: 300px; border-radius: 8px;">
+                </a>
+            `;
+            modalBody.parentNode.insertBefore(imgContainer, modalBody.nextSibling);
+        }
+
+        modalOverlay.classList.add('active');
+    }
+
+    // === PRODUCT MANAGEMENT (Bagian ini yang sebelumnya mungkin hilang) ===
+    let products = [];
+    async function loadProducts() {
+        productsLoading.style.display = 'block';
+        productsNoData.style.display = 'none';
+        try {
+            const { data, error } = await supabase.from('products').select('*').order('code');
+            if(error) throw error;
+            products = data || [];
+            renderProducts();
+        } catch(e) { console.error(e); } 
+        finally { productsLoading.style.display = 'none'; }
+    }
+
+    function renderProducts() {
+        productsTableBody.innerHTML = '';
+        if(products.length === 0) { productsNoData.style.display = 'block'; return; }
+        
+        products.forEach(p => {
+            const tr = document.createElement('tr');
+            tr.dataset.productId = p.id;
+            tr.innerHTML = `<td>${p.id}</td><td>${p.code}</td><td>${p.name}</td><td>${formatRupiah(p.price)}</td>`;
+            tr.onclick = () => {
+                fillProductForm(p);
+                productsTableBody.querySelectorAll('.selected').forEach(row => row.classList.remove('selected'));
+                tr.classList.add('selected');
+            };
+            productsTableBody.appendChild(tr);
+        });
+    }
+
+    function fillProductForm(p) {
+        productIdInput.value = p.id; productNameInput.value = p.name;
+        productPriceInput.value = p.price; productCodeInput.value = p.code;
+        saveProductBtn.textContent = 'Update';
+    }
+
+    // FUNGSI YANG SEBELUMNYA MISSING
+    async function handleSaveProduct(e) {
+        e.preventDefault();
+        const p = { name: productNameInput.value, price: productPriceInput.value, code: productCodeInput.value };
+        const id = productIdInput.value;
+        try {
+            if(id) await supabase.from('products').update(p).eq('id', id);
+            else await supabase.from('products').insert([p]);
+            loadProducts(); productForm.reset(); productIdInput.value=''; saveProductBtn.textContent='Tambah';
+        } catch(e) { alert(e.message); }
+    }
+
+    async function deleteProduct() {
+        const id = productIdInput.value;
+        if(!id || !confirm('Hapus?')) return;
+        await supabase.from('products').delete().eq('id', id);
+        loadProducts(); productForm.reset();
+    }
+
+    // === AUTO REFRESH ===
+    function startAutoRefresh() {
+        if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+        autoRefreshTimer = setInterval(() => {
+            if (!isRefreshing && document.getElementById('orders-page').classList.contains('active')) {
+                loadOrders();
+                loadQueueData();
+            }
+        }, REFRESH_INTERVAL);
+    }
 
     // === EVENT LISTENERS ===
     statusFilter.addEventListener('change', renderOrders);
     refreshOrdersBtn.addEventListener('click', () => { loadOrders(); loadQueueData(); });
     
+    // Actions
     confirmOrderBtn.addEventListener('click', () => updateOrderStatus('confirmed'));
     cancelOrderBtn.addEventListener('click', () => updateOrderStatus('cancelled'));
     viewOrderBtn.addEventListener('click', () => viewOrderDetails());
     
+    // Selectors
     selectAllBtn.addEventListener('click', () => { selectAllCheckbox.checked = true; toggleSelectAll(); });
     clearSelectionBtn.addEventListener('click', clearAllSelections);
     selectAllCheckbox.addEventListener('change', toggleSelectAll);
 
+    // Queue
     if(nextQueueBtn) nextQueueBtn.addEventListener('click', nextQueue);
     if(clearQueueBtn) clearQueueBtn.addEventListener('click', clearCurrentQueue);
     if(resetQueueBtn) resetQueueBtn.addEventListener('click', resetQueue);
 
-    productForm.addEventListener('submit', handleSaveProduct);
-    clearFormBtn.addEventListener('click', () => { productForm.reset(); productIdInput.value=''; });
-    refreshProductsBtn.addEventListener('click', loadProducts);
-    deleteProductBtn.addEventListener('click', deleteProduct);
-    generateCodeBtn.addEventListener('click', () => productCodeInput.value = 'P'+Math.floor(Math.random()*1000));
+    // Products
+    // PASTIKAN PRODUCT FORM ADA SEBELUM DI-BIND
+    if (productForm) {
+        productForm.addEventListener('submit', handleSaveProduct);
+    }
+    
+    if (clearFormBtn) clearFormBtn.addEventListener('click', () => { productForm.reset(); productIdInput.value=''; });
+    if (refreshProductsBtn) refreshProductsBtn.addEventListener('click', loadProducts);
+    if (deleteProductBtn) deleteProductBtn.addEventListener('click', deleteProduct);
+    if (generateCodeBtn) generateCodeBtn.addEventListener('click', () => productCodeInput.value = 'P'+Math.floor(Math.random()*1000));
 
+    // UI
     closeModalBtn.addEventListener('click', () => modalOverlay.classList.remove('active'));
     autoRefreshToggle.addEventListener('change', () => { 
         autoRefresh = autoRefreshToggle.checked;
