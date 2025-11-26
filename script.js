@@ -582,7 +582,7 @@ async function updateQueueDisplay() {
                     // Jika TIDAK ada di list (berarti masih Pending atau sudah Completed)
                     // Karena kita baru checkout, kemungkinan besar masih Pending
                     // Atau jika nomornya kecil sekali, mungkin sudah Completed
-                    estimationEl.textContent = 'Menunggu Konfirmasi Admin...';
+                    estimationEl.textContent = 'Menunggu pembayaran anda dikonfirmasi Admin...';
                     estimationEl.style.color = '#e67e22'; // Orange
                 }
             } else if (yourQueueEl) {
@@ -697,7 +697,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const goPayBtn = document.getElementById('go-pay-btn');
     if (goPayBtn) {
         goPayBtn.addEventListener('click', () => {
-            showPage('queue-page'); 
+            showPage('history-page'); 
         });
     }
 
