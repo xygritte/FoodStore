@@ -11,7 +11,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const REFRESH_INTERVAL = 5000;
 
     // === ELEMENT SELECTORS ===
-    // Navigation & Layout
     const tabButtons = document.querySelectorAll('.tab-btn');
     const mobileTabButtons = document.querySelectorAll('.mobile-tab-btn');
     const pages = document.querySelectorAll('.page');
@@ -21,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const mobileMenuBtn = document.getElementById('mobile-menu-btn');
     const mobileNav = document.getElementById('mobile-nav');
 
-    // Halaman Pesanan (Orders)
+    // Halaman Pesanan
     const ordersPage = document.getElementById('orders-page');
     const ordersTableBody = document.getElementById('orders-table-body');
     const ordersLoading = document.getElementById('orders-loading');
@@ -29,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusFilter = document.getElementById('status-filter');
     const refreshOrdersBtn = document.getElementById('refresh-orders-btn');
     
-    // Order Actions
+    // Actions
     const confirmOrderBtn = document.getElementById('confirm-order-btn');
     const cancelOrderBtn = document.getElementById('cancel-order-btn');
     const viewOrderBtn = document.getElementById('view-order-btn');
@@ -40,20 +39,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedCount = document.getElementById('selected-count');
     const selectedInfo = document.getElementById('selected-info');
 
-    // Queue Controls (Admin)
+    // Queue Controls
     const adminCurrentQueueEl = document.getElementById('admin-current-queue');
     const nextQueueBtn = document.getElementById('next-queue-btn');
     const clearQueueBtn = document.getElementById('clear-current-queue-btn');
     const resetQueueBtn = document.getElementById('reset-queue-btn');
     const queueListAdminEl = document.getElementById('queue-list-admin');
 
-    // Dashboard Stats
+    // Stats
     const statTotalSales = document.getElementById('stat-total-sales');
     const statTotalSold = document.getElementById('stat-total-sold');
     const statPendingOrders = document.getElementById('stat-pending-orders');
     const statConfirmedOrders = document.getElementById('stat-confirmed-orders');
 
-    // Halaman Produk (Products)
+    // Products
     const productsPage = document.getElementById('products-page');
     const productsTableBody = document.getElementById('products-table-body');
     const productsLoading = document.getElementById('products-loading');
@@ -97,7 +96,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return "Rp " + value.toLocaleString('id-ID');
     };
 
-    // Helper Date Today (Local)
     const getTodayDateStr = () => {
         const now = new Date();
         const offset = now.getTimezoneOffset() * 60000;
@@ -107,7 +105,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const hasDataChanged = (newData, oldData) => {
         if (!oldData || oldData.length === 0) return newData && newData.length > 0;
         if (newData.length !== oldData.length) return true;
-        
         const latestOld = oldData[0]?.updated_at || oldData[0]?.sale_date;
         const latestNew = newData[0]?.updated_at || newData[0]?.sale_date;
         if (latestNew !== latestOld) return true;
@@ -181,7 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSelectedInfo();
     };
 
-    // === LOAD ORDERS (WITH DEBUGGING) ===
+    // === LOAD ORDERS ===
     async function loadOrders() {
         if (isRefreshing) return;
         isRefreshing = true;
@@ -420,7 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 .order('queue_number', { ascending: true })
                 .limit(1);
 
-            // Fallback jika tidak ada data hari ini
+            // Fallback
             if (!data || data.length === 0) {
                  const { data: fallbackData } = await supabase
                     .from('sales')
@@ -437,7 +434,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data && data.length > 0) {
                 const nextNum = data[0].queue_number;
-                
                 const result = await supabaseClient.moveToProcessing(nextNum);
 
                 if (result.success) {
@@ -463,7 +459,6 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Tidak ada antrian yang sedang dipanggil.');
             return;
         }
-        
         if (!confirm(`Selesaikan antrian #${currentQueue}?`)) return;
         
         showLoading('Menyelesaikan...');
@@ -505,6 +500,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // === ORDER ACTIONS (CONFIRM / CANCEL) ===
     
+    // UPDATE PENTING: Menangani Multiple Group Selection
     async function updateOrderStatus(newStatus) {
         if (selectedOrders.size === 0) return alert(`Pilih pesanan dulu.`);
         
@@ -513,17 +509,36 @@ document.addEventListener('DOMContentLoaded', () => {
         
         showLoading('Updating...');
         
-        let allItemIds = [];
-        selectedOrders.forEach(key => {
-            if (groupedOrders[key]) allItemIds.push(...groupedOrders[key].order_ids);
-        });
-
         try {
-            let result;
+            let successCount = 0;
+            const collectedQueueNumbers = [];
 
+            // Jika status CONFIRMED, proses satu per satu (SEQUENTIAL)
             if (newStatus === 'confirmed') {
-                result = await supabaseClient.assignQueueNumber(allItemIds);
-            } else {
+                const groupKeys = Array.from(selectedOrders);
+                
+                // Loop sequential dengan await agar nomor antrian tidak bentrok
+                for (const key of groupKeys) {
+                    if (groupedOrders[key]) {
+                        const orderIds = groupedOrders[key].order_ids;
+                        const res = await supabaseClient.assignQueueNumber(orderIds);
+                        
+                        if (res.success) {
+                            successCount++;
+                            collectedQueueNumbers.push(res.queue_number);
+                        } else {
+                            console.error('Failed to assign queue for group:', key, res.error);
+                        }
+                    }
+                }
+            } 
+            // Jika status LAIN (misal CANCEL), proses bulk (sekaligus) agar cepat
+            else {
+                let allItemIds = [];
+                selectedOrders.forEach(key => {
+                    if (groupedOrders[key]) allItemIds.push(...groupedOrders[key].order_ids);
+                });
+
                 const { data, error } = await supabase
                     .from('sales')
                     .update({ status: newStatus })
@@ -531,22 +546,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     .select();
                 
                 if (error) throw error;
-                result = { success: true, data };
+                successCount = selectedOrders.size; // Asumsi grup sukses terupdate
             }
 
-            if (result.success) {
-                let msg = `✅ Berhasil: ${allItemIds.length} item di${actionText}.`;
-                if (newStatus === 'confirmed' && result.queue_number) {
-                    msg = `✅ Order masuk Antrian #${result.queue_number}`;
-                }
-
-                updateStatus(msg);
-                await loadOrders();
-                await loadQueueData();
-                clearAllSelections();
-            } else {
-                throw new Error(result.error);
+            // UI Updates setelah loop selesai
+            let msg = `✅ Berhasil memproses ${successCount} grup.`;
+            if (newStatus === 'confirmed' && collectedQueueNumbers.length > 0) {
+                msg = `✅ Order masuk Antrian #${collectedQueueNumbers.join(', #')}`;
             }
+
+            updateStatus(msg);
+            await loadOrders();
+            await loadQueueData();
+            clearAllSelections();
             
         } catch (error) {
             console.error(error);
@@ -604,7 +616,7 @@ document.addEventListener('DOMContentLoaded', () => {
         modalOverlay.classList.add('active');
     }
 
-    // === PRODUCT MANAGEMENT (Bagian ini yang sebelumnya mungkin hilang) ===
+    // === PRODUCT MANAGEMENT ===
     let products = [];
     async function loadProducts() {
         productsLoading.style.display = 'block';
@@ -641,7 +653,6 @@ document.addEventListener('DOMContentLoaded', () => {
         saveProductBtn.textContent = 'Update';
     }
 
-    // FUNGSI YANG SEBELUMNYA MISSING
     async function handleSaveProduct(e) {
         e.preventDefault();
         const p = { name: productNameInput.value, price: productPriceInput.value, code: productCodeInput.value };
@@ -691,7 +702,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if(resetQueueBtn) resetQueueBtn.addEventListener('click', resetQueue);
 
     // Products
-    // PASTIKAN PRODUCT FORM ADA SEBELUM DI-BIND
     if (productForm) {
         productForm.addEventListener('submit', handleSaveProduct);
     }

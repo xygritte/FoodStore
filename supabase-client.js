@@ -191,7 +191,7 @@ class SupabaseClient {
         }
     }
 
-    // C. Ambil Status Antrian (PERBAIKAN UTAMA: FALLBACK LOGIC)
+    // C. Ambil Status Antrian (FIXED: Removed updated_at)
     async getQueueStatus() {
         try {
             const todayStr = this.getTodayDateStr();
@@ -214,7 +214,7 @@ class SupabaseClient {
                     .from('sales')
                     .select('queue_number')
                     .eq('status', 'processing')
-                    .order('updated_at', { ascending: false }) // Yang paling baru diupdate
+                    .order('sale_date', { ascending: false }) // FIX: Changed from updated_at to sale_date
                     .limit(1);
                 
                 if (globalProcessing && globalProcessing.length > 0) {
@@ -224,7 +224,6 @@ class SupabaseClient {
             }
 
             // 2. Ambil Daftar Antrian Aktif (Confirmed & Processing)
-            // QUERY UTAMA: Filter Tanggal
             let { data: queueList, error: listError } = await supabase
                 .from('sales')
                 .select('queue_number, customer_name, status, product_name, sale_date')
@@ -234,8 +233,7 @@ class SupabaseClient {
             
             if (listError) throw listError;
 
-            // LOGIKA FALLBACK: Jika kosong, coba query TANPA filter tanggal
-            // Ini untuk mengatasi masalah timezone atau tanggal yang tidak pas
+            // Fallback
             if (!queueList || queueList.length === 0) {
                 console.warn('Queue list empty with date filter. Trying fallback (All Active Queues)...');
                 
@@ -243,7 +241,7 @@ class SupabaseClient {
                     .from('sales')
                     .select('queue_number, customer_name, status, product_name, sale_date')
                     .in('status', ['confirmed', 'processing'])
-                    .not('queue_number', 'is', null) // Pastikan ada nomor antrian
+                    .not('queue_number', 'is', null) 
                     .order('queue_number', { ascending: true });
                 
                 if (!fallbackError) {
@@ -296,15 +294,15 @@ class SupabaseClient {
         }
     }
 
-    // D. Pindah ke Processing
+    // D. Pindah ke Processing (FIXED: Removed updated_at)
     async moveToProcessing(queueNumber) {
         try {
-            // Update tanpa filter tanggal yang ketat agar tidak gagal jika beda hari
+            // Update status ke processing
             const { data, error } = await supabase
                 .from('sales')
-                .update({ status: 'processing', updated_at: new Date() })
+                .update({ status: 'processing' }) // Removed updated_at
                 .eq('queue_number', queueNumber)
-                .neq('status', 'cancelled') // Jangan update yang cancelled
+                .neq('status', 'cancelled') 
                 .select();
 
             if (error) throw error;
@@ -315,12 +313,12 @@ class SupabaseClient {
         }
     }
 
-    // E. Selesaikan Antrian
+    // E. Selesaikan Antrian (FIXED: Removed updated_at)
     async clearQueue(queueNumber) {
         try {
             const { data, error } = await supabase
                 .from('sales')
-                .update({ status: 'completed', updated_at: new Date() })
+                .update({ status: 'completed' }) // Removed updated_at
                 .eq('queue_number', queueNumber)
                 .neq('status', 'cancelled')
                 .select();
@@ -333,7 +331,7 @@ class SupabaseClient {
         }
     }
 
-    // F. Reset Semua Antrian
+    // F. Reset Semua Antrian (FIXED: Removed updated_at)
     async resetQueue() {
         try {
             const todayStr = this.getTodayDateStr();
@@ -342,8 +340,7 @@ class SupabaseClient {
                 .from('sales')
                 .update({ 
                     status: 'cancelled',
-                    updated_at: new Date()
-                })
+                }) // Removed updated_at
                 .in('status', ['pending', 'processing', 'confirmed'])
                 .gte('sale_date', `${todayStr}T00:00:00`);
             
