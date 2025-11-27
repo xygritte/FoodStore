@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const ordersLoading = document.getElementById('orders-loading');
     const ordersNoData = document.getElementById('orders-no-data');
     const statusFilter = document.getElementById('status-filter');
+    const searchInput = document.getElementById('search-orders-input'); // SELECTOR BARU UNTUK SEARCH
     const refreshOrdersBtn = document.getElementById('refresh-orders-btn');
     
     // Actions
@@ -41,7 +42,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Queue Controls
     const adminCurrentQueueEl = document.getElementById('admin-current-queue');
-    // const nextQueueBtn -> SUDAH DIHAPUS
     const clearQueueBtn = document.getElementById('clear-current-queue-btn');
     const resetQueueBtn = document.getElementById('reset-queue-btn');
     const queueListAdminEl = document.getElementById('queue-list-admin');
@@ -259,6 +259,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderOrders() {
         const filter = statusFilter.value;
+        // LOGIKA PENCARIAN BARU
+        const searchTerm = searchInput.value.toLowerCase().trim();
+        
         const fragment = document.createDocumentFragment();
         let hasVisibleData = false;
         const sortedGroups = Object.values(groupedOrders);
@@ -270,9 +273,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         sortedGroups.forEach(group => {
+            // 1. Filter berdasarkan STATUS
             if (filter !== 'semua') {
                 if (filter === 'pending' && (group.status !== 'pending' && group.status !== 'mixed')) return;
                 else if (filter !== 'pending' && filter !== group.status) return;
+            }
+
+            // 2. Filter berdasarkan PENCARIAN (Nama, Antrian, Catatan)
+            if (searchTerm) {
+                const customerName = group.customer.toLowerCase();
+                const queueNum = group.queue_number ? String(group.queue_number) : '';
+                const notes = group.notes ? group.notes.toLowerCase() : '';
+                
+                // Cek apakah ada yang cocok
+                const match = customerName.includes(searchTerm) || 
+                              queueNum.includes(searchTerm) || 
+                              notes.includes(searchTerm);
+                
+                if (!match) return; // Skip jika tidak cocok
             }
 
             hasVisibleData = true;
@@ -362,9 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 adminCurrentQueueEl.style.color = currentQueue > 0 ? '#ff9800' : '#ccc';
 
                 // LOGIC OTOMATIS:
-                // Jika tidak ada antrian yang sedang diproses, tapi ada antrian menunggu
                 if (currentQueue === 0 && result.data.queue_list.length > 0) {
-                    // Pastikan tidak loop infinit: Cek apakah ada yang statusnya 'confirmed'
                     const hasWaiting = result.data.queue_list.some(q => q.status === 'confirmed');
                     if (hasWaiting) {
                         console.log('Auto-calling next queue...');
@@ -383,12 +399,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Fungsi baru untuk panggil otomatis
     async function callNextQueueAutomatically() {
         try {
             const todayStr = getTodayDateStr();
 
-            // Cari confirmed terlama (dengan fallback)
             let { data, error } = await supabase
                 .from('sales')
                 .select('queue_number')
@@ -397,7 +411,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 .order('queue_number', { ascending: true })
                 .limit(1);
 
-            // Fallback jika date filter gagal
             if (!data || data.length === 0) {
                  const { data: fallbackData } = await supabase
                     .from('sales')
@@ -418,8 +431,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (result.success) {
                     updateStatus(`⏩ Memanggil otomatis antrian #${nextNum}`);
-                    // Refresh UI
-                    // loadQueueData akan dipanggil lagi nanti, tapi kita hindari loop di sini
                     const qResult = await supabaseClient.getQueueStatus();
                     if(qResult.success) {
                         currentQueue = qResult.data.current_queue;
@@ -479,11 +490,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await supabaseClient.clearQueue(currentQueue);
             if (result.success) {
                 updateStatus(`✅ Antrian #${currentQueue} selesai.`);
-                
-                // SETELAH SELESAI, PANGGIL BERIKUTNYA OTOMATIS
                 await callNextQueueAutomatically();
-                
-                await loadQueueData(); // Refresh UI final
+                await loadQueueData(); 
                 await loadOrders(); 
             } else {
                 throw new Error(result.error);
@@ -531,13 +539,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (newStatus === 'confirmed') {
                 const groupKeys = Array.from(selectedOrders);
-                
-                // Loop sequential dengan await
                 for (const key of groupKeys) {
                     if (groupedOrders[key]) {
                         const orderIds = groupedOrders[key].order_ids;
                         const res = await supabaseClient.assignQueueNumber(orderIds);
-                        
                         if (res.success) {
                             successCount++;
                             collectedQueueNumbers.push(res.queue_number);
@@ -569,7 +574,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             updateStatus(msg);
             await loadOrders();
-            await loadQueueData(); // Ini akan mentrigger auto-call jika queue kosong
+            await loadQueueData();
             clearAllSelections();
             
         } catch (error) {
@@ -695,6 +700,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // === EVENT LISTENERS ===
+    // EVENT LISTENER PENCARIAN DITAMBAHKAN
+    if(searchInput) searchInput.addEventListener('input', renderOrders);
+    
     statusFilter.addEventListener('change', renderOrders);
     refreshOrdersBtn.addEventListener('click', () => { loadOrders(); loadQueueData(); });
     

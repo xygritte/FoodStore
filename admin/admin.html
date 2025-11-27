@@ -123,13 +123,19 @@
             <section class="card" id="order-controls">
                 <h2 class="section-title">Daftar Pesanan</h2>
                 <div class="filter-group">
-                    <label for="status-filter">Filter Status:</label>
-                    <select id="status-filter">
-                        <option value="semua">Semua</option>
-                        <option value="pending">Pending (termasuk mixed)</option>
-                        <option value="confirmed">Confirmed</option>
-                        <option value="cancelled">Cancelled</option>
-                    </select>
+                    <div class="search-box">
+                        <input type="text" id="search-orders-input" placeholder="🔍 Cari nama, antrian, catatan...">
+                    </div>
+                    
+                    <div class="status-select-group">
+                        <label for="status-filter">Status:</label>
+                        <select id="status-filter">
+                            <option value="semua">Semua</option>
+                            <option value="pending">Pending (termasuk mixed)</option>
+                            <option value="confirmed">Confirmed</option>
+                            <option value="cancelled">Cancelled</option>
+                        </select>
+                    </div>
                     <button class="btn" id="refresh-orders-btn">🔄 Refresh Data</button>
                 </div>
                 <div class="selected-info" id="selected-info">

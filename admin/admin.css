@@ -273,6 +273,22 @@ body {
     flex-wrap: wrap;
 }
 
+/* NEW: Search Box Style */
+.search-box {
+    flex-grow: 1;
+    min-width: 200px;
+}
+
+.search-box input {
+    width: 100%;
+    border: 2px solid var(--border-color);
+}
+
+.search-box input:focus {
+    border-color: var(--primary-color);
+    outline: none;
+}
+
 .selected-info {
     margin-bottom: 15px;
     padding: 8px 12px;
@@ -292,7 +308,7 @@ select, input[type="text"], input[type="number"] {
 }
 
 select {
-    min-width: 200px;
+    min-width: 150px;
 }
 
 .form-group {
@@ -442,7 +458,7 @@ select {
 
 /* === TAMBAHAN STYLE UNTUK LINK NAMA CUSTOMER === */
 .customer-link {
-    color: var(--info-color); /* Menggunakan warna biru/info */
+    color: var(--info-color);
     font-weight: bold;
     text-decoration: none;
     cursor: pointer;
