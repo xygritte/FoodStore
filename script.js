@@ -185,20 +185,20 @@ function addToCart(product) {
     showNotification(`✅ ${product.name} ditambahkan ke keranjang`);
 }
 
-function showNotification(message) {
+function showNotification(message, duration = 3000) {
     const existingNotifications = document.querySelectorAll('.notification');
     existingNotifications.forEach(notif => notif.remove());
     
     const notification = document.createElement('div');
     notification.className = 'notification';
-    notification.textContent = message;
+    notification.innerHTML = message; // Allow HTML content
     document.body.appendChild(notification);
     
     setTimeout(() => notification.style.transform = 'translateX(0)', 100);
     setTimeout(() => {
         notification.style.transform = 'translateX(100%)';
         setTimeout(() => notification.remove(), 300);
-    }, 3000);
+    }, duration);
 }
 
 // === FUNGSI API ===
@@ -254,7 +254,6 @@ async function processCheckout() {
                 customer_name: customerName,
                 notes: notes,
                 status: 'pending',
-                // queue_number null awal
                 payment_proof_url: null 
             };
             
@@ -291,7 +290,12 @@ async function processCheckout() {
 // === FUNGSI HISTORY ===
 async function loadOrderHistory() {
     if (!historyListContainer) return;
-    historyListContainer.innerHTML = `<div class="loading" style="display: block;"><div class="spinner"></div><p>Memuat riwayat...</p></div>`;
+    
+    // Jangan overwrite innerHTML dengan loading jika kita hanya ingin update data (realtime)
+    // Cek apakah list kosong, jika iya baru tampilkan loading
+    if (!historyListContainer.hasChildNodes() || historyListContainer.querySelector('.empty-history')) {
+         historyListContainer.innerHTML = `<div class="loading" style="display: block;"><div class="spinner"></div><p>Memuat riwayat...</p></div>`;
+    }
     
     const orderIds = getOrderIdsFromLocalStorage();
     if (orderIds.length === 0) {
@@ -307,7 +311,8 @@ async function loadOrderHistory() {
             throw new Error(result.error);
         }
     } catch (error) {
-        historyListContainer.innerHTML = `<p style="text-align:center; color:red;">Gagal memuat riwayat.</p>`;
+        // Jangan hapus tampilan lama jika error update background
+        console.error("Gagal load history:", error);
     }
 }
 
@@ -378,7 +383,7 @@ function renderOrderHistory(orders) {
 
     historyListContainer.innerHTML = '';
     
-    // Refresh Button
+    // Button refresh manual tetap ada sebagai backup
     const refreshBtn = document.createElement('button');
     refreshBtn.className = 'history-refresh-btn';
     refreshBtn.innerHTML = '🔄 Refresh Status';
@@ -413,6 +418,7 @@ function renderOrderHistory(orders) {
             ? `<span style="background:var(--primary-color); color:white; padding:2px 6px; border-radius:4px; font-size:0.8em; margin-left:5px;">Antrian #${group.queue_number}</span>` 
             : '';
 
+        // Simpan nomor antrian terakhir user ke localStorage agar bisa dilacak di halaman Queue
         if (hasQueueNumber && sortedGroups.indexOf(group) === 0) {
              yourQueueNumber = group.queue_number;
              localStorage.setItem('lastQueueNumber', yourQueueNumber);
@@ -444,6 +450,8 @@ function renderOrderHistory(orders) {
         }
 
         let displayStatus = group.status === 'pending' || group.status === 'mixed' ? 'Menunggu Konfirmasi' : group.status;
+        if(group.status === 'confirmed') displayStatus = 'Diterima (Menunggu Giliran)';
+        if(group.status === 'processing') displayStatus = 'Sedang Disiapkan';
 
         groupEl.innerHTML = `
             <div class="history-group-header">
@@ -469,34 +477,20 @@ async function updateQueueDisplay() {
             const queueData = result.data;
             const currentQ = queueData.current_queue || '-';
             const currentQueueEl = document.getElementById('current-queue-number');
-            if(currentQueueEl) currentQueueEl.textContent = currentQ;
+            if(currentQueueEl) currentQueueEl.textContent = currentQ > 0 ? `#${currentQ}` : '-';
             
-            const yourQueueEl = document.getElementById('your-queue-number');
-            const estimationEl = document.getElementById('queue-estimation');
-            
-            if (yourQueueEl) {
-                if (yourQueueNumber) {
-                    yourQueueEl.textContent = yourQueueNumber;
-                    const isInList = queueData.queue_list.find(q => q.queue_number === yourQueueNumber);
-                    
-                    if (currentQ === yourQueueNumber) {
-                        estimationEl.textContent = 'Giliran Anda! Silakan ke kasir/menunggu sajian.';
-                        estimationEl.style.color = 'var(--primary-color)';
-                        estimationEl.style.fontWeight = 'bold';
-                    } else if (isInList) {
-                        const peopleAhead = queueData.queue_list.filter(q => q.queue_number < yourQueueNumber && (q.status === 'confirmed' || q.status === 'processing')).length;
-                        estimationEl.textContent = `Dalam Antrian (Menunggu ${peopleAhead} orang lagi)`;
-                        estimationEl.style.color = 'var(--text-dark)';
-                    } else {
-                        estimationEl.textContent = 'Antrian Selesai atau Tidak Ditemukan.';
-                        estimationEl.style.color = '#777';
-                    }
-                } else {
-                    yourQueueEl.textContent = '-';
-                    estimationEl.textContent = 'Pesanan Anda masih menunggu konfirmasi Admin.';
-                    estimationEl.style.color = '#e67e22'; 
+            // Logic notifikasi visual di halaman antrian
+            if (yourQueueNumber && currentQ === yourQueueNumber) {
+                // Tambahkan efek visual jika sedang dipanggil
+                if(currentQueueEl) {
+                    currentQueueEl.style.color = '#e74c3c'; // Merah mencolok
+                    currentQueueEl.style.animation = 'pulse 1s infinite';
                 }
+            } else if (currentQueueEl) {
+                currentQueueEl.style.color = 'var(--primary-color)';
+                currentQueueEl.style.animation = 'none';
             }
+
             renderQueueList(queueData.queue_list || []);
         }
     } catch (error) {
@@ -532,12 +526,57 @@ function showPage(pageId) {
     const pages = document.querySelectorAll('.page');
     pages.forEach(page => page.classList.remove('active'));
     document.getElementById(pageId)?.classList.add('active');
+    
+    // Load data fresh saat pindah halaman
     if (pageId === 'history-page') loadOrderHistory();
     if (pageId === 'queue-page') updateQueueDisplay();
     
     const navItems = document.querySelectorAll('.nav-item');
     navItems.forEach(item => item.classList.remove('active'));
     document.querySelector(`[data-page="${pageId}"]`)?.classList.add('active');
+}
+
+// === HANDLE REALTIME EVENTS ===
+function handleRealtimeUpdate(payload) {
+    console.log("⚡ Realtime Update:", payload);
+    const eventType = payload.eventType;
+    const newData = payload.new;
+    const oldData = payload.old;
+
+    // 1. UPDATE QUEUE: Jika ada perubahan status ke 'confirmed', 'processing', atau 'completed'
+    // atau jika queue_number berubah
+    updateQueueDisplay();
+
+    // 2. UPDATE HISTORY: Refresh history jika kita sedang di halaman history
+    if (document.getElementById('history-page').classList.contains('active')) {
+        loadOrderHistory();
+    }
+
+    // 3. PERSONAL NOTIFICATION: Cek apakah update ini milik user ini?
+    if (eventType === 'UPDATE') {
+        const myOrderIds = getOrderIdsFromLocalStorage();
+        
+        // Cek apakah ID yang diupdate ada di list pesanan saya
+        if (myOrderIds.includes(newData.id)) {
+            
+            // Logika Notifikasi Pintar
+            if (oldData.status !== newData.status) {
+                if (newData.status === 'confirmed') {
+                    showNotification(`✅ <b>Hore!</b> Pesanan Anda dikonfirmasi.<br>Masuk antrian #${newData.queue_number || '-'}`);
+                    // Trigger get history untuk update tampilan antrian saya
+                    loadOrderHistory(); 
+                } else if (newData.status === 'processing') {
+                    showNotification(`🍳 <b>Giliran Anda!</b><br>Pesanan #${newData.queue_number} sedang dibuat.`);
+                    // Getar HP jika support (opsional)
+                    if(navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                } else if (newData.status === 'cancelled') {
+                    showNotification(`❌ Pesanan Anda dibatalkan oleh Admin.`);
+                } else if (newData.status === 'completed') {
+                    showNotification(`👋 Pesanan selesai. Terima kasih!`);
+                }
+            }
+        }
+    }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -583,10 +622,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (searchInput) searchInput.addEventListener('input', renderProducts);
     if (searchOrders) searchOrders.addEventListener('input', renderProducts);
     
-    setInterval(() => {
-        const queuePage = document.getElementById('queue-page');
-        if (queuePage && queuePage.classList.contains('active')) updateQueueDisplay();
-    }, 5000);
+    // === INTEGRASI REALTIME TRIGGER ===
+    // Hapus setInterval manual dan ganti dengan Subscription
+    supabaseClient.subscribeToSales(handleRealtimeUpdate);
 });
 
 window.loadProducts = loadProducts;
