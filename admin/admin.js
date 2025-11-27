@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const ordersLoading = document.getElementById('orders-loading');
     const ordersNoData = document.getElementById('orders-no-data');
     const statusFilter = document.getElementById('status-filter');
-    const searchInput = document.getElementById('search-orders-input'); // SELECTOR BARU UNTUK SEARCH
+    const searchInput = document.getElementById('search-orders-input');
     const refreshOrdersBtn = document.getElementById('refresh-orders-btn');
     
     // Order Actions
@@ -68,6 +68,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearFormBtn = document.getElementById('clear-form-btn');
     const refreshProductsBtn = document.getElementById('refresh-products-btn');
     const deleteProductBtn = document.getElementById('delete-product-btn');
+
+    // Activity Logs (BARU)
+    const logsPage = document.getElementById('logs-page');
+    const logsTableBody = document.getElementById('logs-table-body');
+    const logsLoading = document.getElementById('logs-loading');
+    const refreshLogsBtn = document.getElementById('refresh-logs-btn');
 
     // Modal
     const modalOverlay = document.getElementById('modal-overlay');
@@ -130,11 +136,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         mobileNav.classList.remove('active');
         
+        // Logic load per halaman
         if (pageId === 'orders-page') {
             if (orders.length === 0) loadOrders();
             loadQueueData(); 
         } else if (pageId === 'products-page') {
             loadProducts();
+        } else if (pageId === 'logs-page') {
+            loadActivityLogs();
         }
     };
 
@@ -260,7 +269,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderOrders() {
         const filter = statusFilter.value;
-        // LOGIKA PENCARIAN BARU
         const searchTerm = searchInput.value.toLowerCase().trim();
         
         const fragment = document.createDocumentFragment();
@@ -280,18 +288,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 else if (filter !== 'pending' && filter !== group.status) return;
             }
 
-            // 2. Filter berdasarkan PENCARIAN (Nama, Antrian, Catatan)
+            // 2. Filter berdasarkan PENCARIAN
             if (searchTerm) {
                 const customerName = group.customer.toLowerCase();
                 const queueNum = group.queue_number ? String(group.queue_number) : '';
                 const notes = group.notes ? group.notes.toLowerCase() : '';
                 
-                // Cek apakah ada yang cocok
                 const match = customerName.includes(searchTerm) || 
                               queueNum.includes(searchTerm) || 
                               notes.includes(searchTerm);
                 
-                if (!match) return; // Skip jika tidak cocok
+                if (!match) return; 
             }
 
             hasVisibleData = true;
@@ -380,7 +387,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 adminCurrentQueueEl.textContent = currentQueue > 0 ? `#${currentQueue}` : '-';
                 adminCurrentQueueEl.style.color = currentQueue > 0 ? '#ff9800' : '#ccc';
 
-                // LOGIC OTOMATIS:
                 if (currentQueue === 0 && result.data.queue_list.length > 0) {
                     const hasWaiting = result.data.queue_list.some(q => q.status === 'confirmed');
                     if (hasWaiting) {
@@ -477,7 +483,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
     }
 
-    // Tombol: Selesaikan Antrian (OTOMATIS)
     async function clearCurrentQueue() {
         if (currentQueue === 0) {
             alert('Tidak ada antrian yang sedang dipanggil.');
@@ -525,7 +530,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // === ORDER ACTIONS (CONFIRM / CANCEL) ===
-    
     async function updateOrderStatus(newStatus) {
         if (selectedOrders.size === 0) return alert(`Pilih pesanan dulu.`);
         
@@ -689,19 +693,85 @@ document.addEventListener('DOMContentLoaded', () => {
         loadProducts(); productForm.reset();
     }
 
+    // === ACTIVITY LOGS MANAGEMENT (BARU) ===
+    async function loadActivityLogs() {
+        if(!logsPage.classList.contains('active')) return;
+
+        logsLoading.style.display = 'block';
+        const result = await supabaseClient.getActivityLogs();
+        logsLoading.style.display = 'none';
+
+        if (result.success) {
+            renderActivityLogs(result.data);
+        } else {
+            console.error(result.error);
+        }
+    }
+
+    function renderActivityLogs(logs) {
+        if (!logsTableBody) return;
+        logsTableBody.innerHTML = '';
+
+        if (!logs || logs.length === 0) {
+            logsTableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Belum ada aktivitas.</td></tr>';
+            return;
+        }
+
+        logs.forEach(log => {
+            const tr = document.createElement('tr');
+            const date = new Date(log.changed_at).toLocaleString('id-ID');
+            
+            // Format pesan detail
+            let detail = '';
+            if (log.action_type === 'INSERT') {
+                const name = log.new_data.name || log.new_data.customer_name || 'Item Baru';
+                detail = `Menambahkan: <b>${name}</b>`;
+            } else if (log.action_type === 'UPDATE') {
+                if (log.table_name === 'sales' && log.new_data.status) {
+                     detail = `Ubah status: ${log.old_data.status} ➔ <b>${log.new_data.status}</b>`;
+                } else if (log.table_name === 'sales' && log.new_data.queue_number) {
+                     detail = `Masuk Antrian: <b>#${log.new_data.queue_number}</b>`;
+                } else {
+                    detail = 'Mengupdate data';
+                }
+            } else if (log.action_type === 'DELETE') {
+                const name = log.old_data.name || log.old_data.customer_name || 'Item';
+                detail = `Menghapus: <b>${name}</b>`;
+            }
+
+            // Warna Badge
+            let badgeColor = '#777';
+            if(log.action_type === 'INSERT') badgeColor = 'var(--success-color)';
+            if(log.action_type === 'UPDATE') badgeColor = 'var(--info-color)';
+            if(log.action_type === 'DELETE') badgeColor = 'var(--danger-color)';
+
+            tr.innerHTML = `
+                <td>${date}</td>
+                <td><span style="background:${badgeColor}; color:white; padding:3px 8px; border-radius:4px; font-size:0.8em;">${log.action_type}</span></td>
+                <td>${log.table_name}</td>
+                <td>${detail}</td>
+            `;
+            logsTableBody.appendChild(tr);
+        });
+    }
+
     // === AUTO REFRESH ===
     function startAutoRefresh() {
         if (autoRefreshTimer) clearInterval(autoRefreshTimer);
         autoRefreshTimer = setInterval(() => {
-            if (!isRefreshing && document.getElementById('orders-page').classList.contains('active')) {
-                loadOrders();
-                loadQueueData();
+            if (!isRefreshing) {
+                // Cek halaman mana yang aktif
+                if (ordersPage.classList.contains('active')) {
+                    loadOrders();
+                    loadQueueData();
+                } else if (logsPage.classList.contains('active')) {
+                    loadActivityLogs();
+                }
             }
         }, REFRESH_INTERVAL);
     }
 
     // === EVENT LISTENERS ===
-    // EVENT LISTENER PENCARIAN DITAMBAHKAN
     if(searchInput) searchInput.addEventListener('input', renderOrders);
     
     statusFilter.addEventListener('change', renderOrders);
@@ -726,6 +796,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deleteProductBtn) deleteProductBtn.addEventListener('click', deleteProduct);
     if (generateCodeBtn) generateCodeBtn.addEventListener('click', () => productCodeInput.value = 'P'+Math.floor(Math.random()*1000));
 
+    // Logs (Baru)
+    if (refreshLogsBtn) refreshLogsBtn.addEventListener('click', loadActivityLogs);
+
     // UI
     closeModalBtn.addEventListener('click', () => modalOverlay.classList.remove('active'));
     autoRefreshToggle.addEventListener('change', () => { 
@@ -738,5 +811,6 @@ document.addEventListener('DOMContentLoaded', () => {
     loadOrders();
     loadQueueData();
     loadProducts();
+    // loadActivityLogs dipanggil saat tab diklik
     startAutoRefresh();
 });

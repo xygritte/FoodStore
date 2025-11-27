@@ -67,11 +67,13 @@
     <div class="mobile-nav" id="mobile-nav">
         <button class="mobile-tab-btn active" data-page="orders-page">📋 Kelola Pesanan</button>
         <button class="mobile-tab-btn" data-page="products-page">📦 Kelola Produk</button>
+        <button class="mobile-tab-btn" data-page="logs-page">📜 Log Aktivitas</button>
     </div>
 
     <nav class="tabs">
         <button class="tab-btn active" data-page="orders-page">📋 Kelola Pesanan</button>
         <button class="tab-btn" data-page="products-page">📦 Kelola Produk</button>
+        <button class="tab-btn" data-page="logs-page">📜 Log Aktivitas</button>
     </nav>
 
     <main class="container">
@@ -232,6 +234,31 @@
                 </section>
             </div>
         </div>
+
+        <div class="page" id="logs-page">
+            <section class="card">
+                <h2 class="section-title">Riwayat Aktivitas Sistem</h2>
+                <div class="action-buttons">
+                    <button class="btn" id="refresh-logs-btn">🔄 Refresh Log</button>
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Waktu</th>
+                                <th>Aksi</th>
+                                <th>Tabel</th>
+                                <th>Detail Perubahan</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logs-table-body">
+                            </tbody>
+                    </table>
+                    <div class="table-loading" id="logs-loading" style="display: none;">Memuat log...</div>
+                </div>
+            </section>
+        </div>
+
     </main>
 
     <footer class="status-bar" id="status-bar">

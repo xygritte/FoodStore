@@ -177,6 +177,22 @@ class SupabaseClient {
             return { success: false, error: error.message };
         }
     }
+
+    // === 4. ACTIVITY LOGS (BARU) ===
+    async getActivityLogs(limit = 50) {
+        try {
+            const { data, error } = await supabase
+                .from('activity_logs')
+                .select('*')
+                .order('changed_at', { ascending: false })
+                .limit(limit);
+
+            if (error) throw error;
+            return { success: true, data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
 }
 
 const supabaseClient = new SupabaseClient();
