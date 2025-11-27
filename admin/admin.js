@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Queue Controls
     const adminCurrentQueueEl = document.getElementById('admin-current-queue');
-    const nextQueueBtn = document.getElementById('next-queue-btn');
+    // const nextQueueBtn -> SUDAH DIHAPUS
     const clearQueueBtn = document.getElementById('clear-current-queue-btn');
     const resetQueueBtn = document.getElementById('reset-queue-btn');
     const queueListAdminEl = document.getElementById('queue-list-admin');
@@ -194,10 +194,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error) throw error;
             
             const newData = data || [];
-            
-            // DEBUG LOGS
-            const confirmedOrders = newData.filter(order => order.status === 'confirmed');
-            console.log('Confirmed orders:', confirmedOrders);
             
             if (hasDataChanged(newData, orders)) {
                 orders = newData;
@@ -354,7 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statConfirmedOrders.textContent = `${confirmedCount} item`;
     }
 
-    // === QUEUE MANAGEMENT ===
+    // === QUEUE MANAGEMENT (OTOMATIS) ===
 
     async function loadQueueData() {
         try {
@@ -365,12 +361,78 @@ document.addEventListener('DOMContentLoaded', () => {
                 adminCurrentQueueEl.textContent = currentQueue > 0 ? `#${currentQueue}` : '-';
                 adminCurrentQueueEl.style.color = currentQueue > 0 ? '#ff9800' : '#ccc';
 
-                renderAdminQueueList(result.data.queue_list || []);
+                // LOGIC OTOMATIS:
+                // Jika tidak ada antrian yang sedang diproses, tapi ada antrian menunggu
+                if (currentQueue === 0 && result.data.queue_list.length > 0) {
+                    // Pastikan tidak loop infinit: Cek apakah ada yang statusnya 'confirmed'
+                    const hasWaiting = result.data.queue_list.some(q => q.status === 'confirmed');
+                    if (hasWaiting) {
+                        console.log('Auto-calling next queue...');
+                        await callNextQueueAutomatically();
+                    } else {
+                        renderAdminQueueList(result.data.queue_list);
+                    }
+                } else {
+                    renderAdminQueueList(result.data.queue_list || []);
+                }
             } else {
                 console.error('Failed to load queue data:', result.error);
             }
         } catch (error) {
             console.error('Error loading queue data:', error);
+        }
+    }
+
+    // Fungsi baru untuk panggil otomatis
+    async function callNextQueueAutomatically() {
+        try {
+            const todayStr = getTodayDateStr();
+
+            // Cari confirmed terlama (dengan fallback)
+            let { data, error } = await supabase
+                .from('sales')
+                .select('queue_number')
+                .eq('status', 'confirmed')
+                .gte('sale_date', `${todayStr}T00:00:00`)
+                .order('queue_number', { ascending: true })
+                .limit(1);
+
+            // Fallback jika date filter gagal
+            if (!data || data.length === 0) {
+                 const { data: fallbackData } = await supabase
+                    .from('sales')
+                    .select('queue_number')
+                    .eq('status', 'confirmed')
+                    .not('queue_number', 'is', null)
+                    .order('queue_number', { ascending: true })
+                    .limit(1);
+                 
+                 if (fallbackData && fallbackData.length > 0) {
+                     data = fallbackData;
+                 }
+            }
+
+            if (data && data.length > 0) {
+                const nextNum = data[0].queue_number;
+                const result = await supabaseClient.moveToProcessing(nextNum);
+
+                if (result.success) {
+                    updateStatus(`⏩ Memanggil otomatis antrian #${nextNum}`);
+                    // Refresh UI
+                    // loadQueueData akan dipanggil lagi nanti, tapi kita hindari loop di sini
+                    const qResult = await supabaseClient.getQueueStatus();
+                    if(qResult.success) {
+                        currentQueue = qResult.data.current_queue;
+                        adminCurrentQueueEl.textContent = `#${currentQueue}`;
+                        renderAdminQueueList(qResult.data.queue_list);
+                    }
+                    await loadOrders();
+                } else {
+                    throw new Error(result.error);
+                }
+            }
+        } catch (error) {
+            console.error('Error in auto call:', error);
         }
     }
 
@@ -403,62 +465,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
     }
 
-    // Tombol: Panggil Berikutnya
-    async function nextQueue() {
-        showLoading('Memanggil...');
-        try {
-            const todayStr = getTodayDateStr();
-
-            let { data, error } = await supabase
-                .from('sales')
-                .select('queue_number')
-                .eq('status', 'confirmed')
-                .gte('sale_date', `${todayStr}T00:00:00`)
-                .order('queue_number', { ascending: true })
-                .limit(1);
-
-            // Fallback
-            if (!data || data.length === 0) {
-                 const { data: fallbackData } = await supabase
-                    .from('sales')
-                    .select('queue_number')
-                    .eq('status', 'confirmed')
-                    .not('queue_number', 'is', null)
-                    .order('queue_number', { ascending: true })
-                    .limit(1);
-                 
-                 if (fallbackData && fallbackData.length > 0) {
-                     data = fallbackData;
-                 }
-            }
-
-            if (data && data.length > 0) {
-                const nextNum = data[0].queue_number;
-                const result = await supabaseClient.moveToProcessing(nextNum);
-
-                if (result.success) {
-                    updateStatus(`⏩ Memanggil antrian #${nextNum}`);
-                    await loadQueueData();
-                    await loadOrders();
-                } else {
-                    throw new Error(result.error);
-                }
-            } else {
-                alert('Tidak ada antrian yang menunggu (Confirmed).');
-            }
-        } catch (error) {
-            console.error('Error in nextQueue:', error);
-            updateStatus(`❌ Gagal: ${error.message}`, true);
-        } finally {
-            hideLoading();
-        }
-    }
-
+    // Tombol: Selesaikan Antrian (OTOMATIS)
     async function clearCurrentQueue() {
         if (currentQueue === 0) {
             alert('Tidak ada antrian yang sedang dipanggil.');
             return;
         }
+        
         if (!confirm(`Selesaikan antrian #${currentQueue}?`)) return;
         
         showLoading('Menyelesaikan...');
@@ -466,7 +479,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await supabaseClient.clearQueue(currentQueue);
             if (result.success) {
                 updateStatus(`✅ Antrian #${currentQueue} selesai.`);
-                await loadQueueData();
+                
+                // SETELAH SELESAI, PANGGIL BERIKUTNYA OTOMATIS
+                await callNextQueueAutomatically();
+                
+                await loadQueueData(); // Refresh UI final
                 await loadOrders(); 
             } else {
                 throw new Error(result.error);
@@ -500,7 +517,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // === ORDER ACTIONS (CONFIRM / CANCEL) ===
     
-    // UPDATE PENTING: Menangani Multiple Group Selection
     async function updateOrderStatus(newStatus) {
         if (selectedOrders.size === 0) return alert(`Pilih pesanan dulu.`);
         
@@ -513,11 +529,10 @@ document.addEventListener('DOMContentLoaded', () => {
             let successCount = 0;
             const collectedQueueNumbers = [];
 
-            // Jika status CONFIRMED, proses satu per satu (SEQUENTIAL)
             if (newStatus === 'confirmed') {
                 const groupKeys = Array.from(selectedOrders);
                 
-                // Loop sequential dengan await agar nomor antrian tidak bentrok
+                // Loop sequential dengan await
                 for (const key of groupKeys) {
                     if (groupedOrders[key]) {
                         const orderIds = groupedOrders[key].order_ids;
@@ -531,9 +546,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 }
-            } 
-            // Jika status LAIN (misal CANCEL), proses bulk (sekaligus) agar cepat
-            else {
+            } else {
                 let allItemIds = [];
                 selectedOrders.forEach(key => {
                     if (groupedOrders[key]) allItemIds.push(...groupedOrders[key].order_ids);
@@ -546,10 +559,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     .select();
                 
                 if (error) throw error;
-                successCount = selectedOrders.size; // Asumsi grup sukses terupdate
+                successCount = selectedOrders.size;
             }
 
-            // UI Updates setelah loop selesai
             let msg = `✅ Berhasil memproses ${successCount} grup.`;
             if (newStatus === 'confirmed' && collectedQueueNumbers.length > 0) {
                 msg = `✅ Order masuk Antrian #${collectedQueueNumbers.join(', #')}`;
@@ -557,7 +569,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             updateStatus(msg);
             await loadOrders();
-            await loadQueueData();
+            await loadQueueData(); // Ini akan mentrigger auto-call jika queue kosong
             clearAllSelections();
             
         } catch (error) {
@@ -686,26 +698,20 @@ document.addEventListener('DOMContentLoaded', () => {
     statusFilter.addEventListener('change', renderOrders);
     refreshOrdersBtn.addEventListener('click', () => { loadOrders(); loadQueueData(); });
     
-    // Actions
     confirmOrderBtn.addEventListener('click', () => updateOrderStatus('confirmed'));
     cancelOrderBtn.addEventListener('click', () => updateOrderStatus('cancelled'));
     viewOrderBtn.addEventListener('click', () => viewOrderDetails());
     
-    // Selectors
     selectAllBtn.addEventListener('click', () => { selectAllCheckbox.checked = true; toggleSelectAll(); });
     clearSelectionBtn.addEventListener('click', clearAllSelections);
     selectAllCheckbox.addEventListener('change', toggleSelectAll);
 
-    // Queue
-    if(nextQueueBtn) nextQueueBtn.addEventListener('click', nextQueue);
+    // Queue Buttons
     if(clearQueueBtn) clearQueueBtn.addEventListener('click', clearCurrentQueue);
     if(resetQueueBtn) resetQueueBtn.addEventListener('click', resetQueue);
 
     // Products
-    if (productForm) {
-        productForm.addEventListener('submit', handleSaveProduct);
-    }
-    
+    if (productForm) productForm.addEventListener('submit', handleSaveProduct);
     if (clearFormBtn) clearFormBtn.addEventListener('click', () => { productForm.reset(); productIdInput.value=''; });
     if (refreshProductsBtn) refreshProductsBtn.addEventListener('click', loadProducts);
     if (deleteProductBtn) deleteProductBtn.addEventListener('click', deleteProduct);

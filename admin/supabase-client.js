@@ -9,345 +9,171 @@ const supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONF
 
 class SupabaseClient {
     
-    // === HELPER: Tanggal Hari Ini (Local Time) ===
     getTodayDateStr() {
         const now = new Date();
         const offset = now.getTimezoneOffset() * 60000;
-        const localISOTime = (new Date(now - offset)).toISOString().slice(0, 10);
-        return localISOTime;
+        return (new Date(now - offset)).toISOString().slice(0, 10);
     }
 
     // === 1. PRODUK & ORDER BASIC ===
-    
     async getProducts() {
         try {
-            const { data, error } = await supabase
-                .from('products')
-                .select('*')
-                .order('code');
-            
+            const { data, error } = await supabase.from('products').select('*').order('code');
             if (error) throw error;
             return { success: true, products: data };
         } catch (error) {
-            console.error('Error fetching products:', error);
             return { success: false, error: error.message };
         }
     }
 
     async createOrder(orderData) {
         try {
-            const { data, error } = await supabase
-                .from('sales')
-                .insert([orderData])
-                .select();
-            
+            const { data, error } = await supabase.from('sales').insert([orderData]).select();
             if (error) throw error;
             return { success: true, data: data[0] };
         } catch (error) {
-            console.error('Error creating order:', error);
             return { success: false, error: error.message };
         }
     }
 
     async getOrdersByIds(idList) {
-        if (!idList || idList.length === 0) {
-            return { success: true, orders: [] };
-        }
+        if (!idList || idList.length === 0) return { success: true, orders: [] };
         try {
-            const { data, error } = await supabase
-                .from('sales')
-                .select('*')
-                .in('id', idList) 
-                .order('sale_date', { ascending: false });
-            
+            const { data, error } = await supabase.from('sales').select('*').in('id', idList).order('sale_date', { ascending: false });
             if (error) throw error;
             return { success: true, orders: data };
         } catch (error) {
-            console.error('Error fetching orders by IDs:', error);
             return { success: false, error: error.message };
         }
     }
 
     async updateOrderStatusByIds(idList, status) {
-        if (!idList || idList.length === 0) {
-            return { success: true, data: [] };
-        }
+        if (!idList || idList.length === 0) return { success: true, data: [] };
         try {
-            const updates = { status };
-            const { data, error } = await supabase
-                .from('sales')
-                .update(updates)
-                .in('id', idList)
-                .select();
-            
+            const { data, error } = await supabase.from('sales').update({ status }).in('id', idList).select();
             if (error) throw error;
             return { success: true, data };
         } catch (error) {
-            console.error('Error updating multiple order statuses:', error);
             return { success: false, error: error.message };
         }
     }
 
     // === 2. UPLOAD & BUKTI PEMBAYARAN ===
-    
     async uploadProofImage(file) {
         try {
             const fileExt = file.name.split('.').pop();
             const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
-            const filePath = `${fileName}`;
-
-            const { data, error } = await supabase.storage
-                .from('payment-proofs')
-                .upload(filePath, file);
-
+            const { error } = await supabase.storage.from('payment-proofs').upload(fileName, file);
             if (error) throw error;
-
-            const { data: publicUrlData } = supabase.storage
-                .from('payment-proofs')
-                .getPublicUrl(filePath);
-
+            const { data: publicUrlData } = supabase.storage.from('payment-proofs').getPublicUrl(fileName);
             return { success: true, url: publicUrlData.publicUrl };
         } catch (error) {
-            console.error('Error uploading proof:', error);
             return { success: false, error: error.message };
         }
     }
 
     async updateOrderProof(idList, proofUrl) {
         try {
-            const { data, error } = await supabase
-                .from('sales')
-                .update({ payment_proof_url: proofUrl })
-                .in('id', idList)
-                .select();
-
+            const { data, error } = await supabase.from('sales').update({ payment_proof_url: proofUrl }).in('id', idList).select();
             if (error) throw error;
             return { success: true, data };
         } catch (error) {
-            console.error('Error updating order proof:', error);
             return { success: false, error: error.message };
         }
     }
 
     // === 3. MANAJEMEN ANTRIAN ===
-
-    // Helper Internal: Hitung nomor antrian berikutnya
     async _calculateNextQueueNumber() {
         try {
             const todayStr = this.getTodayDateStr();
-
-            const { data, error } = await supabase
-                .from('sales')
-                .select('queue_number')
-                .gte('sale_date', `${todayStr}T00:00:00`) 
-                .lte('sale_date', `${todayStr}T23:59:59`)
-                .not('queue_number', 'is', null) 
-                .order('queue_number', { ascending: false })
-                .limit(1);
-            
+            const { data, error } = await supabase.from('sales').select('queue_number').gte('sale_date', `${todayStr}T00:00:00`).lte('sale_date', `${todayStr}T23:59:59`).not('queue_number', 'is', null).order('queue_number', { ascending: false }).limit(1);
             if (error) throw error;
-            
             let nextQueue = 1;
-            if (data && data.length > 0 && data[0].queue_number) {
-                nextQueue = data[0].queue_number + 1;
-            }
-            
+            if (data && data.length > 0 && data[0].queue_number) nextQueue = data[0].queue_number + 1;
             return { success: true, queue_number: nextQueue };
         } catch (error) {
-            console.error('Error calculating next queue number:', error);
             return { success: false, error: error.message };
         }
     }
 
-    // Assign Nomor Antrian (Admin)
     async assignQueueNumber(orderIds) {
         try {
             const queueResult = await this._calculateNextQueueNumber();
             if (!queueResult.success) throw new Error(queueResult.error);
-
             const nextQueue = queueResult.queue_number;
-            const confirmedAt = new Date().toISOString();
-
-            const { data, error } = await supabase
-                .from('sales')
-                .update({ 
-                    queue_number: nextQueue,
-                    status: 'confirmed',
-                    confirmed_at: confirmedAt
-                })
-                .in('id', orderIds)
-                .select();
-
+            const { data, error } = await supabase.from('sales').update({ queue_number: nextQueue, status: 'confirmed', confirmed_at: new Date().toISOString() }).in('id', orderIds).select();
             if (error) throw error;
-            
-            return { 
-                success: true, 
-                data,
-                queue_number: nextQueue 
-            };
+            return { success: true, data, queue_number: nextQueue };
         } catch (error) {
-            console.error('Error assigning queue number:', error);
             return { success: false, error: error.message };
         }
     }
 
-    // C. Ambil Status Antrian (FIXED: Removed updated_at)
     async getQueueStatus() {
         try {
             const todayStr = this.getTodayDateStr();
-            console.log('Fetching queue for date:', todayStr);
-
-            // 1. Ambil Antrian yang Sedang Diproses (Processing)
-            let { data: currentQueueData, error: currentError } = await supabase
-                .from('sales')
-                .select('queue_number')
-                .eq('status', 'processing')
-                .gte('sale_date', `${todayStr}T00:00:00`)
-                .order('queue_number', { ascending: true })
-                .limit(1);
-
+            let { data: currentQueueData, error: currentError } = await supabase.from('sales').select('queue_number').eq('status', 'processing').gte('sale_date', `${todayStr}T00:00:00`).order('queue_number', { ascending: true }).limit(1);
             if (currentError) throw currentError;
 
-            // Jika processing kosong hari ini, coba cek global (fallback)
             if (!currentQueueData || currentQueueData.length === 0) {
-                 const { data: globalProcessing } = await supabase
-                    .from('sales')
-                    .select('queue_number')
-                    .eq('status', 'processing')
-                    .order('sale_date', { ascending: false }) // FIX: Changed from updated_at to sale_date
-                    .limit(1);
-                
-                if (globalProcessing && globalProcessing.length > 0) {
-                    console.log('Using global processing fallback');
-                    currentQueueData = globalProcessing;
-                }
+                 const { data: globalProcessing } = await supabase.from('sales').select('queue_number').eq('status', 'processing').order('sale_date', { ascending: false }).limit(1);
+                if (globalProcessing && globalProcessing.length > 0) currentQueueData = globalProcessing;
             }
 
-            // 2. Ambil Daftar Antrian Aktif (Confirmed & Processing)
-            let { data: queueList, error: listError } = await supabase
-                .from('sales')
-                .select('queue_number, customer_name, status, product_name, sale_date')
-                .in('status', ['confirmed', 'processing']) 
-                .gte('sale_date', `${todayStr}T00:00:00`)
-                .order('queue_number', { ascending: true });
-            
+            let { data: queueList, error: listError } = await supabase.from('sales').select('queue_number, customer_name, status, product_name, sale_date').in('status', ['confirmed', 'processing']).gte('sale_date', `${todayStr}T00:00:00`).order('queue_number', { ascending: true });
             if (listError) throw listError;
 
-            // Fallback
             if (!queueList || queueList.length === 0) {
-                console.warn('Queue list empty with date filter. Trying fallback (All Active Queues)...');
-                
-                const { data: fallbackList, error: fallbackError } = await supabase
-                    .from('sales')
-                    .select('queue_number, customer_name, status, product_name, sale_date')
-                    .in('status', ['confirmed', 'processing'])
-                    .not('queue_number', 'is', null) 
-                    .order('queue_number', { ascending: true });
-                
-                if (!fallbackError) {
-                    queueList = fallbackList;
-                    console.log('Fallback data retrieved:', queueList.length, 'items');
-                }
+                const { data: fallbackList, error: fallbackError } = await supabase.from('sales').select('queue_number, customer_name, status, product_name, sale_date').in('status', ['confirmed', 'processing']).not('queue_number', 'is', null).order('queue_number', { ascending: true });
+                if (!fallbackError) queueList = fallbackList;
             }
             
-            console.log('Final Queue List Data:', queueList);
-            
-            // 3. Grouping data
             const groupedQueue = {};
-            
             if (queueList && queueList.length > 0) {
                 queueList.forEach(order => {
                     if (!order.queue_number) return; 
-                    
                     if (!groupedQueue[order.queue_number]) {
-                        groupedQueue[order.queue_number] = {
-                            queue_number: order.queue_number,
-                            customer_name: order.customer_name,
-                            status: order.status,
-                            items: []
-                        };
+                        groupedQueue[order.queue_number] = { queue_number: order.queue_number, customer_name: order.customer_name, status: order.status, items: [] };
                     }
-                    if (order.status === 'processing') {
-                        groupedQueue[order.queue_number].status = 'processing';
-                    }
+                    if (order.status === 'processing') groupedQueue[order.queue_number].status = 'processing';
                     groupedQueue[order.queue_number].items.push(order.product_name);
                 });
             }
             
-            const currentQueueNum = (currentQueueData && currentQueueData.length > 0) 
-                ? currentQueueData[0].queue_number 
-                : 0;
-
-            const finalQueueList = Object.values(groupedQueue).sort((a,b) => a.queue_number - b.queue_number);
-            
-            return { 
-                success: true, 
-                data: {
-                    current_queue: currentQueueNum,
-                    queue_list: finalQueueList
-                }
-            };
-
+            const currentQueueNum = (currentQueueData && currentQueueData.length > 0) ? currentQueueData[0].queue_number : 0;
+            return { success: true, data: { current_queue: currentQueueNum, queue_list: Object.values(groupedQueue).sort((a,b) => a.queue_number - b.queue_number) } };
         } catch (error) {
-            console.error('Error getting queue status:', error);
             return { success: false, error: error.message };
         }
     }
 
-    // D. Pindah ke Processing (FIXED: Removed updated_at)
     async moveToProcessing(queueNumber) {
         try {
-            // Update status ke processing
-            const { data, error } = await supabase
-                .from('sales')
-                .update({ status: 'processing' }) // Removed updated_at
-                .eq('queue_number', queueNumber)
-                .neq('status', 'cancelled') 
-                .select();
-
+            const { data, error } = await supabase.from('sales').update({ status: 'processing' }).eq('queue_number', queueNumber).neq('status', 'cancelled').select();
             if (error) throw error;
             return { success: true, data };
         } catch (error) {
-            console.error('Error moving queue to processing:', error);
             return { success: false, error: error.message };
         }
     }
 
-    // E. Selesaikan Antrian (FIXED: Removed updated_at)
     async clearQueue(queueNumber) {
         try {
-            const { data, error } = await supabase
-                .from('sales')
-                .update({ status: 'completed' }) // Removed updated_at
-                .eq('queue_number', queueNumber)
-                .neq('status', 'cancelled')
-                .select();
-            
+            const { data, error } = await supabase.from('sales').update({ status: 'completed' }).eq('queue_number', queueNumber).neq('status', 'cancelled').select();
             if (error) throw error;
             return { success: true, data };
         } catch (error) {
-            console.error('Error clearing queue:', error);
             return { success: false, error: error.message };
         }
     }
 
-    // F. Reset Semua Antrian (FIXED: Removed updated_at)
     async resetQueue() {
         try {
             const todayStr = this.getTodayDateStr();
-            
-            const { data, error } = await supabase
-                .from('sales')
-                .update({ 
-                    status: 'cancelled',
-                }) // Removed updated_at
-                .in('status', ['pending', 'processing', 'confirmed'])
-                .gte('sale_date', `${todayStr}T00:00:00`);
-            
+            const { data, error } = await supabase.from('sales').update({ status: 'cancelled' }).in('status', ['pending', 'processing', 'confirmed']).gte('sale_date', `${todayStr}T00:00:00`);
             if (error) throw error;
             return { success: true, data };
         } catch (error) {
-            console.error('Error resetting queue:', error);
             return { success: false, error: error.message };
         }
     }
