@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const REFRESH_INTERVAL = 5000;
 
     // === ELEMENT SELECTORS ===
+    // Navigation & Layout
     const tabButtons = document.querySelectorAll('.tab-btn');
     const mobileTabButtons = document.querySelectorAll('.mobile-tab-btn');
     const pages = document.querySelectorAll('.page');
@@ -20,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const mobileMenuBtn = document.getElementById('mobile-menu-btn');
     const mobileNav = document.getElementById('mobile-nav');
 
-    // Halaman Pesanan
+    // Halaman Pesanan (Orders)
     const ordersPage = document.getElementById('orders-page');
     const ordersTableBody = document.getElementById('orders-table-body');
     const ordersLoading = document.getElementById('orders-loading');
@@ -29,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('search-orders-input'); // SELECTOR BARU UNTUK SEARCH
     const refreshOrdersBtn = document.getElementById('refresh-orders-btn');
     
-    // Actions
+    // Order Actions
     const confirmOrderBtn = document.getElementById('confirm-order-btn');
     const cancelOrderBtn = document.getElementById('cancel-order-btn');
     const viewOrderBtn = document.getElementById('view-order-btn');
