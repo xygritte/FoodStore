@@ -468,7 +468,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const isProcessing = queue.status === 'processing';
             const statusColor = isProcessing ? 'var(--primary-color)' : 'var(--info-color)';
             const statusText = isProcessing ? 'DIPANGGIL' : 'MENUNGGU';
-            const bgColor = isProcessing ? '#fff8e1' : '#fff';
+            const bgColor = isProcessing ? '#f6ffe1ff' : '#fff';
 
             return `
             <div class="queue-admin-item" style="background: ${bgColor}; border-left: 4px solid ${statusColor};">
