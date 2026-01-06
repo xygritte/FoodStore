@@ -1,12 +1,13 @@
 // Supabase Configuration
 const SUPABASE_CONFIG = {
-    // Ganti dengan URL dan Key project Supabase Anda jika berbeda
     url: 'https://whngeaxjrrfgbldnelpq.supabase.co', 
+    // Gunakan ANON KEY (Public), JANGAN gunakan Service Role Key di sini!
     key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndobmdlYXhqcnJmZ2JsZG5lbHBxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMxMDMyODIsImV4cCI6MjA3ODY3OTI4Mn0.40PLSwX4X2BxRCy-LXOubqbZR3gvB5JqFOyHUV5TS9s' 
 };
 
 // Init Supabase client
-const supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.key);
+// PERBAIKAN: Mengganti nama variabel dari 'supabase' menjadi 'db' untuk menghindari bentrok nama
+const db = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.key);
 
 class SupabaseClient {
     
@@ -23,7 +24,8 @@ class SupabaseClient {
 
     async getProducts() {
         try {
-            const { data, error } = await supabase
+            // PERBAIKAN: Menggunakan 'db' bukan 'supabase'
+            const { data, error } = await db
                 .from('products')
                 .select('*')
                 .order('code');
@@ -37,7 +39,7 @@ class SupabaseClient {
 
     async createOrder(orderData) {
         try {
-            const { data, error } = await supabase
+            const { data, error } = await db
                 .from('sales')
                 .insert([orderData])
                 .select();
@@ -53,7 +55,7 @@ class SupabaseClient {
     async getOrdersByIds(idList) {
         if (!idList || idList.length === 0) return { success: true, orders: [] };
         try {
-            const { data, error } = await supabase
+            const { data, error } = await db
                 .from('sales')
                 .select('*')
                 .in('id', idList)
@@ -70,7 +72,7 @@ class SupabaseClient {
     async updateOrderStatusByIds(idList, status) {
         if (!idList || idList.length === 0) return { success: true, data: [] };
         try {
-            const { data, error } = await supabase
+            const { data, error } = await db
                 .from('sales')
                 .update({ status })
                 .in('id', idList)
@@ -92,13 +94,13 @@ class SupabaseClient {
             const fileExt = file.name.split('.').pop();
             const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
             
-            const { error } = await supabase.storage
+            const { error } = await db.storage
                 .from('payment-proofs')
                 .upload(fileName, file);
 
             if (error) throw error;
 
-            const { data: publicUrlData } = supabase.storage
+            const { data: publicUrlData } = db.storage
                 .from('payment-proofs')
                 .getPublicUrl(fileName);
 
@@ -110,7 +112,7 @@ class SupabaseClient {
 
     async updateOrderProof(idList, proofUrl) {
         try {
-            const { data, error } = await supabase
+            const { data, error } = await db
                 .from('sales')
                 .update({ payment_proof_url: proofUrl })
                 .in('id', idList)
@@ -133,7 +135,7 @@ class SupabaseClient {
             const todayStr = this.getTodayDateStr();
             
             // Cari nomor antrian terbesar hari ini
-            const { data, error } = await supabase
+            const { data, error } = await db
                 .from('sales')
                 .select('queue_number')
                 .gte('sale_date', `${todayStr}T00:00:00`)
@@ -162,7 +164,7 @@ class SupabaseClient {
             
             const nextQueue = queueResult.queue_number;
 
-            const { data, error } = await supabase
+            const { data, error } = await db
                 .from('sales')
                 .update({ 
                     queue_number: nextQueue, 
@@ -185,7 +187,7 @@ class SupabaseClient {
             const todayStr = this.getTodayDateStr();
 
             // 1. Cari siapa yang sedang diproses (status: processing) hari ini
-            let { data: currentQueueData, error: currentError } = await supabase
+            let { data: currentQueueData, error: currentError } = await db
                 .from('sales')
                 .select('queue_number')
                 .eq('status', 'processing')
@@ -195,9 +197,9 @@ class SupabaseClient {
 
             if (currentError) throw currentError;
 
-            // Fallback: Jika tidak ada yang processing hari ini, cari yang global (jaga-jaga antrian lewat tengah malam)
+            // Fallback: Jika tidak ada yang processing hari ini, cari yang global
             if (!currentQueueData || currentQueueData.length === 0) {
-                 const { data: globalProcessing } = await supabase
+                 const { data: globalProcessing } = await db
                     .from('sales')
                     .select('queue_number')
                     .eq('status', 'processing')
@@ -210,7 +212,7 @@ class SupabaseClient {
             }
 
             // 2. Ambil semua antrian aktif (Confirmed & Processing) hari ini untuk ditampilkan di list
-            let { data: queueList, error: listError } = await supabase
+            let { data: queueList, error: listError } = await db
                 .from('sales')
                 .select('queue_number, customer_name, status, product_name, sale_date')
                 .in('status', ['confirmed', 'processing'])
@@ -219,7 +221,7 @@ class SupabaseClient {
 
             if (listError) throw listError;
 
-            // Grouping agar 1 customer dengan banyak item tidak muncul berkali-kali di list antrian
+            // Grouping
             const groupedQueue = {};
             if (queueList && queueList.length > 0) {
                 queueList.forEach(order => {
@@ -233,7 +235,6 @@ class SupabaseClient {
                             items: []
                         };
                     }
-                    // Jika salah satu item sedang diproses, anggap satu grup sedang diproses
                     if (order.status === 'processing') {
                         groupedQueue[order.queue_number].status = 'processing';
                     }
@@ -258,11 +259,11 @@ class SupabaseClient {
     // Admin: Panggil Antrian (Ubah status ke Processing)
     async moveToProcessing(queueNumber) {
         try {
-            const { data, error } = await supabase
+            const { data, error } = await db
                 .from('sales')
                 .update({ status: 'processing' })
                 .eq('queue_number', queueNumber)
-                .neq('status', 'cancelled') // Jangan update yang sudah batal
+                .neq('status', 'cancelled')
                 .select();
 
             if (error) throw error;
@@ -275,7 +276,7 @@ class SupabaseClient {
     // Admin: Selesaikan Antrian (Ubah status ke Completed)
     async clearQueue(queueNumber) {
         try {
-            const { data, error } = await supabase
+            const { data, error } = await db
                 .from('sales')
                 .update({ status: 'completed' })
                 .eq('queue_number', queueNumber)
@@ -293,7 +294,7 @@ class SupabaseClient {
     async resetQueue() {
         try {
             const todayStr = this.getTodayDateStr();
-            const { data, error } = await supabase
+            const { data, error } = await db
                 .from('sales')
                 .update({ status: 'cancelled' })
                 .in('status', ['pending', 'processing', 'confirmed'])
@@ -311,7 +312,7 @@ class SupabaseClient {
     // ==========================================
     async getActivityLogs(limit = 50) {
         try {
-            const { data, error } = await supabase
+            const { data, error } = await db
                 .from('activity_logs')
                 .select('*')
                 .order('changed_at', { ascending: false })
@@ -328,16 +329,13 @@ class SupabaseClient {
     // 5. MODULE REALTIME SUBSCRIPTION (CUSTOMER)
     // ==========================================
     
-    // Fungsi ini mendengarkan perubahan di tabel 'sales' secara live
-    // Digunakan oleh script.js untuk update notifikasi & antrian otomatis
     subscribeToSales(callback) {
-        return supabase
+        return db
             .channel('public:sales')
             .on(
                 'postgres_changes', 
                 { event: '*', schema: 'public', table: 'sales' }, 
                 (payload) => {
-                    // Panggil fungsi callback di script.js setiap ada perubahan data
                     callback(payload);
                 }
             )
